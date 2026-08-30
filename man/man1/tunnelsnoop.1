@@ -1,4 +1,4 @@
-.TH TUNNELSNOOP 1 "August 2026" "tunnelsnoop 0.1.0" "User Commands"
+.TH TUNNELSNOOP 1 2026-08-31 "tunnelsnoop 0.1.0" "User Commands"
 .SH NAME
 tunnelsnoop \- zero-privilege port-forward monitor and idle reaper
 .SH SYNOPSIS
@@ -42,6 +42,19 @@ Emit streaming structured JSON output instead of the interactive ANSI terminal d
 .B \-once
 Perform a single discovery pass and exit immediately without clearing the screen.
 Useful for login profiles, CI pipelines, and audit scripts.
+.SH EXIT STATUS
+.TP
+.B 0
+Normal termination, including a completed
+.B \-once
+scan and a monitor loop interrupted by \fBSIGINT\fR or \fBSIGTERM\fR.
+.TP
+.B 2
+Invalid command-line arguments. A usage summary is written to standard error.
+.PP
+Failures encountered while scanning \fI/proc\fR (for example, a process exiting
+mid-scan) are reported on standard error and do not alter the exit status;
+the monitor loop continues to the next polling interval.
 .SH SECURITY CONSIDERATIONS
 .TP
 .B Wildcard Exposure (0.0.0.0)
@@ -60,21 +73,29 @@ signaling recycled PIDs.
 .SH EXAMPLES
 .PP
 Monitor tunnels interactively:
-.IP
-.B tunnelsnoop
+.PP
+.EX
+tunnelsnoop
+.EE
 .PP
 Run a one-time audit and exit:
-.IP
-.B tunnelsnoop \-once
+.PP
+.EX
+tunnelsnoop \-once
+.EE
 .PP
 Continuously reap tunnels idle for longer than 15 minutes:
-.IP
-.B tunnelsnoop \-kill\-idle 15m
+.PP
+.EX
+tunnelsnoop \-kill\-idle 15m
+.EE
 .PP
 Emit JSON output and filter exposed tunnels with
 .BR jq (1):
-.IP
-.B tunnelsnoop \-once \-json | jq '.[] | select(.is_wildcard)'
+.PP
+.EX
+tunnelsnoop \-once \-json | jq \(aq.[] | select(.is_wildcard)\(aq
+.EE
 .SH FILES
 .TP
 .I /proc/net/tcp, /proc/net/tcp6
@@ -88,7 +109,21 @@ File descriptor symlinks used to correlate socket inodes with processes.
 .TP
 .I /proc/<pid>/io
 Process-level I/O accounting used for idle duration calculations.
+.SH AUTHORS
+Written by DiAndEn0.
+Source and contribution guidelines are available at
+.UR https://github.com/DiAndEn0/tunnel-snoop
+.UE .
+.SH REPORTING BUGS
+Report defects and feature requests at
+.UR https://github.com/DiAndEn0/tunnel-snoop/issues
+.UE .
 .SH SEE ALSO
-.BR kubectl-port-forward (1),
 .BR ssh (1),
-.BR proc (5)
+.BR jq (1),
+.BR proc (5),
+.BR signal (7)
+.PP
+Kubernetes port-forwarding is documented online at
+.UR https://kubernetes.io/docs/reference/kubectl/generated/kubectl_port\-forward/
+.UE .
