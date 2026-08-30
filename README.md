@@ -23,7 +23,7 @@ PID     PROCESS      LOCAL BINDING        CLIENTS  IDLE       SECURITY
 - **Multi-Tool Discovery**: Automatic detection for `kubectl`, `ssh`, `cloudflared`, and `ngrok`.
 - **Security Exposure Badging**: Highlights non-loopback bindings (`0.0.0.0`, `::`) exposing internal services to the local LAN.
 - **Activity & Idle Tracking**: Correlates active TCP client connections with `/proc/<pid>/io` byte deltas to measure true idle duration.
-- **Safe Automated Reaper**: Optional `--kill-idle` gracefully shuts down stale tunnels (`SIGTERM` with 5s grace before `SIGKILL`), verifying PID reuse and socket inodes before signaling.
+- **Safe Automated Reaper**: Optional `-kill-idle` gracefully shuts down stale tunnels (`SIGTERM` with 5s grace before `SIGKILL`), verifying PID reuse and socket inodes before signaling.
 - **Dual Output**: Interactive ANSI dashboard or structured streaming JSON for pipelines and SIEM logging.
 
 ---
