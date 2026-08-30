@@ -9,7 +9,7 @@ docs/
 *.dylib
 bin/
 dist/
-tunnelsnoop
+/tunnelsnoop
 
 # Test binary, built with `go test -c`
 *.test
