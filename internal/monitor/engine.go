@@ -31,6 +31,14 @@ type Engine struct {
 	tunnels map[int]*model.Tunnel
 }
 
+// portKey identifies a listening endpoint by protocol and local port so that
+// client connection counts are not conflated across protocols that happen to
+// share the same port number (e.g. a TCP and TCP6 listener both on :8080).
+type portKey struct {
+	proto model.Protocol
+	port  int
+}
+
 // NewEngine constructs an Engine with the given Config, applying sane
 // defaults for any zero-valued fields.
 func NewEngine(cfg Config) *Engine {
@@ -71,11 +79,13 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 		return nil, err
 	}
 
-	// Count active established clients targeting each local port.
-	clientCounts := make(map[int]int)
+	// Count active established clients targeting each (protocol, local port)
+	// pair, so a TCP and TCP6 listener sharing a port number don't have their
+	// client counts conflated.
+	clientCounts := make(map[portKey]int)
 	for _, s := range sockets {
 		if s.State == model.StateEstablished {
-			clientCounts[s.LocalPort]++
+			clientCounts[portKey{proto: s.Protocol, port: s.LocalPort}]++
 		}
 	}
 
@@ -86,7 +96,7 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 		activePIDs[d.PID] = true
 		cached, exists := e.tunnels[d.PID]
 
-		activeClients := clientCounts[d.LocalPort]
+		activeClients := clientCounts[portKey{proto: d.Protocol, port: d.LocalPort}]
 		readBytes, writeBytes, _ := procfs.ReadProcessIO(e.cfg.ProcRoot, d.PID)
 
 		if !exists {

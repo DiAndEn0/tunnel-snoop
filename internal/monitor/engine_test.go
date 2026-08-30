@@ -167,6 +167,42 @@ func TestEngineReconciliation_HoldsLastActiveWhenIdle(t *testing.T) {
 	}
 }
 
+// TestEngineReconciliation_ClientCountsAreProtocolScoped verifies that an
+// established connection on tcp6 sharing the same numeric port as a tcp
+// tunnel's listener does not get counted as an active client of that
+// tunnel, since client counting must be scoped by (Protocol, LocalPort).
+func TestEngineReconciliation_ClientCountsAreProtocolScoped(t *testing.T) {
+	procRoot, netRoot := buildFixture(t, 0, 0)
+
+	// Add an ESTABLISHED tcp6 connection on the same port number (5432 =
+	// 0x1538) as the tcp tunnel's listener. It must not be counted.
+	tcp6Contents := "  sl  local_address                         rem_address                            st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+		"   0: 00000000000000000000000001000000:1538 00000000000000000000000000000000:0000 01 00000000:00000000 00:00000000 00000000  1000        0 55555 1 0000000000000000 100 0 0 10 0\n"
+	if err := os.WriteFile(filepath.Join(netRoot, "net", "tcp6"), []byte(tcp6Contents), 0o644); err != nil {
+		t.Fatalf("failed to write net/tcp6: %v", err)
+	}
+
+	eng := monitor.NewEngine(monitor.Config{
+		ProcRoot:        procRoot,
+		NetRoot:         netRoot,
+		AllowedBinaries: []string{"kubectl"},
+	})
+
+	tunnels, err := eng.Reconcile(time.Now())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tunnels) != 1 {
+		t.Fatalf("expected 1 tunnel, got %d", len(tunnels))
+	}
+	if tunnels[0].Protocol != model.ProtoIPv4 {
+		t.Fatalf("expected tcp tunnel, got %q", tunnels[0].Protocol)
+	}
+	if tunnels[0].ActiveClients != 0 {
+		t.Fatalf("expected tcp6 connection on the same port not to be counted, got %d active clients", tunnels[0].ActiveClients)
+	}
+}
+
 func TestEngineReconciliation_EvictsTerminatedProcess(t *testing.T) {
 	procRoot, netRoot := buildFixture(t, 100, 200)
 

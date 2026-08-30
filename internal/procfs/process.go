@@ -67,6 +67,7 @@ func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries [
 			continue
 		}
 
+		seenInodes := make(map[uint64]bool)
 		for _, fd := range fds {
 			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
 			if err != nil {
@@ -80,7 +81,15 @@ func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries [
 					continue
 				}
 
+				if seenInodes[inode] {
+					// Multiple fds (e.g. dup'd listeners) pointing at the
+					// same socket inode must not produce duplicate Tunnel
+					// entries for this PID.
+					continue
+				}
+
 				if sock, found := listenMap[inode]; found {
+					seenInodes[inode] = true
 					tun := model.Tunnel{
 						PID:          pid,
 						ProcessName:  comm,
