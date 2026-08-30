@@ -1,0 +1,129 @@
+.TH TUNNELSNOOP 1 2026-08-31 "tunnelsnoop 0.1.0" "User Commands"
+.SH NAME
+tunnelsnoop \- zero-privilege port-forward monitor and idle reaper
+.SH SYNOPSIS
+.B tunnelsnoop
+[\fB\-interval\fR \fIduration\fR]
+[\fB\-kill\-idle\fR \fIduration\fR]
+[\fB\-json\fR]
+[\fB\-once\fR]
+.SH DESCRIPTION
+.B tunnelsnoop
+is an unprivileged Linux utility that monitors local port-forward tunnels
+established by tools such as
+.BR kubectl (1),
+.BR ssh (1),
+.BR cloudflared (1),
+and
+.BR ngrok (1).
+.PP
+It audits local network exposure by flagging non-loopback wildcard bindings
+(e.g., \fB0.0.0.0\fR or \fB::\fR), tracks client TCP connections and process
+I/O byte counters via \fI/proc\fR, and optionally terminates idle tunnels after
+a specified inactivity period.
+.PP
+Operation requires no root privileges; it inspects only processes owned by the
+invoking user's UID.
+.SH OPTIONS
+.TP
+.BI \-interval " duration"
+Set polling interval for continuous monitor mode (default: \fB5s\fR).
+Valid units include \fBs\fR, \fBm\fR, and \fBh\fR (e.g., \fB2s\fR, \fB10s\fR).
+.TP
+.BI \-kill\-idle " duration"
+Automatically terminate any tracked tunnel whose idle duration exceeds
+\fIduration\fR (e.g., \fB15m\fR, \fB1h\fR).
+Defaults to \fB0\fR (reaping disabled).
+Termination uses \fBSIGTERM\fR with a 5-second grace period before escalating to \fBSIGKILL\fR.
+.TP
+.B \-json
+Emit streaming structured JSON output instead of the interactive ANSI terminal dashboard.
+.TP
+.B \-once
+Perform a single discovery pass and exit immediately without clearing the screen.
+Useful for login profiles, CI pipelines, and audit scripts.
+.SH EXIT STATUS
+.TP
+.B 0
+Normal termination, including a completed
+.B \-once
+scan and a monitor loop interrupted by \fBSIGINT\fR or \fBSIGTERM\fR.
+.TP
+.B 2
+Invalid command-line arguments. A usage summary is written to standard error.
+.PP
+Failures encountered while scanning \fI/proc\fR (for example, a process exiting
+mid-scan) are reported on standard error and do not alter the exit status;
+the monitor loop continues to the next polling interval.
+.SH SECURITY CONSIDERATIONS
+.TP
+.B Wildcard Exposure (0.0.0.0)
+Tunnels bound to \fB0.0.0.0\fR or \fB::\fR listen on all local network interfaces,
+exposing forwarded services to other devices on the same LAN or Wi-Fi network.
+.B tunnelsnoop
+highlights these with a prominent \fB[EXPOSED 0.0.0.0]\fR indicator.
+.TP
+.B PID Recycling Protection
+Before signaling an idle process,
+.B tunnelsnoop
+re-verifies that \fI/proc/<pid>/comm\fR matches the expected binary name and
+that \fI/proc/<pid>/fd\fR still holds the exact listening socket inode recorded
+during discovery. If either check fails, termination is aborted to prevent
+signaling recycled PIDs.
+.SH EXAMPLES
+.PP
+Monitor tunnels interactively:
+.PP
+.EX
+tunnelsnoop
+.EE
+.PP
+Run a one-time audit and exit:
+.PP
+.EX
+tunnelsnoop \-once
+.EE
+.PP
+Continuously reap tunnels idle for longer than 15 minutes:
+.PP
+.EX
+tunnelsnoop \-kill\-idle 15m
+.EE
+.PP
+Emit JSON output and filter exposed tunnels with
+.BR jq (1):
+.PP
+.EX
+tunnelsnoop \-once \-json | jq \(aq.[] | select(.is_wildcard)\(aq
+.EE
+.SH FILES
+.TP
+.I /proc/net/tcp, /proc/net/tcp6
+Kernel socket tables parsed for listening and established sockets.
+.TP
+.I /proc/<pid>/comm, /proc/<pid>/cmdline
+Process identity metadata.
+.TP
+.I /proc/<pid>/fd/*
+File descriptor symlinks used to correlate socket inodes with processes.
+.TP
+.I /proc/<pid>/io
+Process-level I/O accounting used for idle duration calculations.
+.SH AUTHORS
+Written by DiAndEn0.
+Source and contribution guidelines are available at
+.UR https://github.com/DiAndEn0/tunnel-snoop
+.UE .
+.SH REPORTING BUGS
+Report defects and feature requests at
+.UR https://github.com/DiAndEn0/tunnel-snoop/issues
+.UE .
+.SH SEE ALSO
+.BR ssh (1),
+.BR jq (1),
+.BR proc (5),
+.BR signal (7)
+.PP
+Kubernetes port-forwarding is documented online at
+.UR https://kubernetes.io/docs/reference/kubectl/generated/kubectl_port\-forward/
+.UE .
