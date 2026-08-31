@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/DiAndEn0/tunnel-snoop/compare/v1.0.0...v1.1.0) (2026-08-31)
+
+
+### Features
+
+* **cli:** add -version flag ([6e5026e](https://github.com/DiAndEn0/tunnel-snoop/commit/6e5026e7d6e59675c66d8b1ee87e2a92ed8c3a47))
+* **cli:** add -version flag ([65f6c55](https://github.com/DiAndEn0/tunnel-snoop/commit/65f6c55333c866c3a9086ba25207220798d38390))
+
 ## 1.0.0 (2026-08-31)
 
 
