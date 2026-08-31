@@ -1,39 +1,73 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
-name: Go
-
-permissions:
-  contents: write   # tags, releases, reintegration push
-
+name: Go CI Pipeline
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
+
+permissions:
+  contents: read
 
 jobs:
-
-  run-action:
+  golanci:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+    
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pipery-dev/pipery-golang-ci@v1
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          project_path: .
-          config_file: .pipery/config.yaml
-          go_version: 1.22
-          skip_sast: false
-          skip_sca: false
-          skip_lint: false
-          skip_build: false
-          tests_path: ./...
-          target_platforms:  linux/amd64,linux/arm64,linux/arm
-          skip_test: false
-          skip_versioning:     ${{ github.event_name == 'pull_request' }}
-          skip_release:        ${{ github.event_name == 'pull_request' }}
-          skip_reintegration:  ${{ github.event_name == 'pull_request' }}
-          skip_packaging: true
-          version_bump: patch
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          log_file: pipery.jsonl
+          go-version-file: 'go.mod'
+          cache-dependency-path: '**/go.sum'
+          
+      - name: Verify dependencies
+        run: go mod verify
+        
+      - name: Run tests with race detector
+        run: go test -race -coverprofile=coverage.out ./...
+        
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+  release:
+    name: Release Version
+    runs-on: ubuntu-latest
+
+    # Only run this job if the PR was merged
+    if: ${{ github.event.pull_request.merged == true }}
+
+    steps:
+      # Checkout the repository with fetch-depth set to 0 and fetch-tags set to
+      # true
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Tag Commit
+        id: tag-commit
+        uses: issue-ops/semver@v3.0.0
+        with:
+          manifest-path: package.json
+          workspace: ${{ github.workspace }}
+          ref: main
+
+      - name: Print version
+        run: echo ${{ steps.tag-commit.outputs.version }}
