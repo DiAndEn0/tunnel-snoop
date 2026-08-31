@@ -5,6 +5,7 @@
 package monitor
 
 import (
+	"os"
 	"sync"
 	"time"
 
@@ -74,7 +75,7 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 		return nil, err
 	}
 
-	discovered, err := procfs.FindTunnels(e.cfg.ProcRoot, sockets, e.cfg.AllowedBinaries)
+	discovered, err := procfs.FindTunnels(e.cfg.ProcRoot, sockets, e.cfg.AllowedBinaries, os.Getuid())
 	if err != nil {
 		return nil, err
 	}

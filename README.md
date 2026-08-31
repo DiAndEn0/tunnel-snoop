@@ -19,7 +19,7 @@ PID     PROCESS      LOCAL BINDING        CLIENTS  IDLE       SECURITY
 
 ## Key Features
 
-- **Zero-Privilege Auditing**: Runs entirely in unprivileged user space by matching the invoking user's UID (`os.Getuid()`). Requires no `sudo` or kernel modules.
+- **Zero-Privilege Auditing**: Runs entirely in unprivileged user space. Discovery is scoped to processes owned by the invoking user's UID (`os.Getuid()`), so an elevated run still reports only that account's tunnels. Requires no `sudo` or kernel modules.
 - **Multi-Tool Discovery**: Automatic detection for `kubectl`, `ssh`, `cloudflared`, and `ngrok`.
 - **Security Exposure Badging**: Highlights non-loopback bindings (`0.0.0.0`, `::`) exposing internal services to the local LAN.
 - **Activity & Idle Tracking**: Correlates active TCP client connections with `/proc/<pid>/io` byte deltas to measure true idle duration.
@@ -76,7 +76,7 @@ tunnelsnoop -once -json | jq '.[] | select(.is_wildcard)'
 ## How It Works
 
 1. **Scan**: Reads `/proc/net/tcp{,6}` for sockets in `LISTEN` (`0A`) and `ESTABLISHED` (`01`) states.
-2. **Correlate**: Traverses user-owned `/proc/<pid>/fd/*` symlinks (`socket:[inode]`) matching target binary names.
+2. **Correlate**: Traverses `/proc/<pid>/fd/*` symlinks (`socket:[inode]`) matching target binary names, skipping any process whose `/proc/<pid>` directory is not owned by the invoking UID.
 3. **Telemetry**: Tracks client connections and reads `/proc/<pid>/io` byte counters to maintain idle timestamps.
 4. **Reap**: Verifies binary name and socket inode invariance to prevent PID recycling races before issuing `SIGTERM`/`SIGKILL`.
 
