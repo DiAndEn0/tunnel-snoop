@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
 
     # Only run this job if the PR was merged
-    if: ${{ github.event.pull_request.merged == true }}
+    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event.pull_request.merged == true
 
     steps:
       # Checkout the repository with fetch-depth set to 0 and fetch-tags set to
