@@ -3,6 +3,10 @@
 
 name: Go
 
+permissions:
+  contents: write   # tags, releases, reintegration push
+  packages: write   # ghcr.io
+
 on:
   push:
     branches: [ "main" ]
@@ -15,6 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
       - uses: pipery-dev/pipery-golang-ci@v1
         with:
           project_path: .
@@ -25,14 +34,14 @@ jobs:
           skip_lint: false
           skip_build: false
           tests_path: ./...
-          target_platforms: 
+          target_platforms:  linux/amd64,linux/arm64,linux/arm
           skip_test: false
-          skip_versioning: false
-          skip_packaging: false
-          skip_release: false
-          skip_reintegration: false
+          skip_versioning:     ${{ github.event_name == 'pull_request' }}
+          skip_release:        ${{ github.event_name == 'pull_request' }}
+          skip_reintegration:  ${{ github.event_name == 'pull_request' }}
+          skip_packaging: true
           version_bump: patch
-          github_token: 
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           log_file: pipery.jsonl
           registry: ghcr.io
           image_name: 
