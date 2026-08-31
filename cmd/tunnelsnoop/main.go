@@ -51,7 +51,12 @@ func main() {
 				if tun.IdleDuration > *killIdle {
 					fmt.Fprintf(os.Stderr, "Killing idle tunnel PID %d (%s:%d)...\n",
 						tun.PID, tun.LocalAddress, tun.LocalPort)
-					_ = reaper.TerminateTunnel("/proc", tun, 5*time.Second)
+					// Report refusals: the reaper aborts rather than signalling
+					// when a PID has been recycled or its socket has closed, and
+					// silence there is indistinguishable from a successful kill.
+					if err := reaper.TerminateTunnel("/proc", tun, 5*time.Second); err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to terminate PID %d: %v\n", tun.PID, err)
+					}
 				}
 			}
 		}

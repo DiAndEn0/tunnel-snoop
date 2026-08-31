@@ -151,6 +151,43 @@ func TestReaperTermination_AbortsWhenFDDirectoryUnreadable(t *testing.T) {
 	assertAlive(t, cmd)
 }
 
+// The identity checks must be repeated before SIGKILL, not just before SIGTERM.
+// The target is not our child, so it may exit during the grace period and have
+// its PID recycled; signal 0 then succeeds against an unrelated process and the
+// escalation would otherwise kill it. Rewriting comm mid-grace reproduces that
+// state deterministically.
+func TestReaperTermination_AbortsEscalationWhenPIDReusedDuringGrace(t *testing.T) {
+	// Ignoring SIGTERM guarantees the reaper reaches the escalation path.
+	cmd := exec.Command("sh", "-c", "trap '' TERM; sleep 30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start test process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	pid := cmd.Process.Pid
+	procRoot := fakeProcRoot(t, pid, "sleep")
+	commPath := filepath.Join(procRoot, strconv.Itoa(pid), "comm")
+
+	// Swap comm partway through the grace period, as a recycled PID would.
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		_ = os.WriteFile(commPath, []byte("nginx\n"), 0o644)
+	}()
+
+	err := reaper.TerminateTunnel(procRoot, tun(pid), 600*time.Millisecond)
+	if err == nil {
+		t.Fatalf("expected escalation to abort after PID reuse, got nil")
+	}
+	if !strings.Contains(err.Error(), "aborting SIGKILL escalation") {
+		t.Fatalf("expected escalation abort error, got: %v", err)
+	}
+
+	assertAlive(t, cmd)
+}
+
 func TestReaperTermination_EscalatesToSIGKILL(t *testing.T) {
 	// A shell that ignores SIGTERM outlives the grace period, forcing the
 	// reaper down its escalation path.
