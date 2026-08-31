@@ -39,6 +39,30 @@ type portKey struct {
 	port  int
 }
 
+// countClients returns the number of established connections attributable to
+// tunnel, given per-endpoint counts keyed by protocol, port and local IP.
+//
+// A wildcard listener accepts on every interface, and the resulting connections
+// carry the specific interface address rather than 0.0.0.0, so every local IP on
+// the port counts. A listener bound to one address counts only connections
+// terminating on that address.
+func countClients(counts map[portKey]map[string]int, tunnel model.Tunnel) int {
+	byIP := counts[portKey{proto: tunnel.Protocol, port: tunnel.LocalPort}]
+	if byIP == nil {
+		return 0
+	}
+
+	if tunnel.IsWildcard {
+		total := 0
+		for _, n := range byIP {
+			total += n
+		}
+		return total
+	}
+
+	return byIP[tunnel.LocalAddress]
+}
+
 // NewEngine constructs an Engine with the given Config, applying sane
 // defaults for any zero-valued fields.
 func NewEngine(cfg Config) *Engine {
@@ -79,14 +103,21 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 		return nil, err
 	}
 
-	// Count active established clients targeting each (protocol, local port)
-	// pair, so a TCP and TCP6 listener sharing a port number don't have their
-	// client counts conflated.
-	clientCounts := make(map[portKey]int)
+	// Count established connections per (protocol, local port, local IP). The
+	// protocol keeps a TCP and TCP6 listener on the same port number distinct;
+	// the local IP keeps a loopback-bound tunnel from absorbing connections
+	// terminating on an external interface, or an unrelated outbound connection
+	// that happens to have been assigned a matching ephemeral local port.
+	clientCounts := make(map[portKey]map[string]int)
 	for _, s := range sockets {
-		if s.State == model.StateEstablished {
-			clientCounts[portKey{proto: s.Protocol, port: s.LocalPort}]++
+		if s.State != model.StateEstablished {
+			continue
 		}
+		key := portKey{proto: s.Protocol, port: s.LocalPort}
+		if clientCounts[key] == nil {
+			clientCounts[key] = make(map[string]int)
+		}
+		clientCounts[key][s.LocalIP]++
 	}
 
 	activePIDs := make(map[int]bool)
@@ -96,7 +127,7 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 		activePIDs[d.PID] = true
 		cached, exists := e.tunnels[d.PID]
 
-		activeClients := clientCounts[portKey{proto: d.Protocol, port: d.LocalPort}]
+		activeClients := countClients(clientCounts, d)
 		readBytes, writeBytes, _ := procfs.ReadProcessIO(e.cfg.ProcRoot, d.PID)
 
 		if !exists {
