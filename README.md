@@ -51,6 +51,7 @@ Usage: tunnelsnoop [flags]
   -kill-idle duration  Terminate tunnels idle longer than duration (e.g. 15m)
   -json                Emit output as structured JSON
   -once                Perform a single scan and exit
+  -version             Print version and exit
 ```
 
 ---

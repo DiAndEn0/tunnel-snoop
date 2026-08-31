@@ -14,12 +14,22 @@ import (
 	"github.com/DiAndEn0/tunnel-snoop/internal/ui"
 )
 
+// version is the release this binary was built from. Release builds override it
+// with -ldflags "-X main.version=<tag>"; unstamped builds report "dev".
+var version = "dev"
+
 func main() {
 	interval := flag.Duration("interval", 5*time.Second, "Polling interval")
 	killIdle := flag.Duration("kill-idle", 0, "Terminate tunnels idle longer than duration (e.g. 15m)")
 	jsonOutput := flag.Bool("json", false, "Output in JSON format")
 	once := flag.Bool("once", false, "Scan once and exit")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("tunnelsnoop %s\n", version)
+		return
+	}
 
 	eng := monitor.NewEngine(monitor.Config{
 		KillIdle: *killIdle,

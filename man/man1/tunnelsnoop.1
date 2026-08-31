@@ -7,6 +7,7 @@ tunnelsnoop \- zero-privilege port-forward monitor and idle reaper
 [\fB\-kill\-idle\fR \fIduration\fR]
 [\fB\-json\fR]
 [\fB\-once\fR]
+[\fB\-version\fR]
 .SH DESCRIPTION
 .B tunnelsnoop
 is an unprivileged Linux utility that monitors local port-forward tunnels
@@ -42,6 +43,10 @@ Emit streaming structured JSON output instead of the interactive ANSI terminal d
 .B \-once
 Perform a single discovery pass and exit immediately without clearing the screen.
 Useful for login profiles, CI pipelines, and audit scripts.
+.TP
+.B \-version
+Print the release version and exit.
+Binaries built outside the release pipeline report \fBdev\fR.
 .SH EXIT STATUS
 .TP
 .B 0
