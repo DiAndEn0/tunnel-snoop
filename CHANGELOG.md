@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/DiAndEn0/tunnel-snoop/compare/v1.1.0...v1.2.0) (2026-08-31)
+
+
+### Features
+
+* **procfs:** scope tunnel discovery to the invoking user's processes ([#10](https://github.com/DiAndEn0/tunnel-snoop/issues/10)) ([cb6e905](https://github.com/DiAndEn0/tunnel-snoop/commit/cb6e90512a8b4843ef9f2bdd7f1cbb1672d47de1))
+
+
+### Bug Fixes
+
+* **monitor:** scope client counts to the tunnel's local address ([#11](https://github.com/DiAndEn0/tunnel-snoop/issues/11)) ([440f37e](https://github.com/DiAndEn0/tunnel-snoop/commit/440f37e6c492f898bf5ae5ab2fa03aa32e61e1a3))
+* **reaper:** re-verify process identity before SIGKILL escalation ([#9](https://github.com/DiAndEn0/tunnel-snoop/issues/9)) ([f4ae84b](https://github.com/DiAndEn0/tunnel-snoop/commit/f4ae84b236adcee5a3dbc12c6a9ea0defbfd873e))
+
 ## [1.1.0](https://github.com/DiAndEn0/tunnel-snoop/compare/v1.0.0...v1.1.0) (2026-08-31)
 
 
