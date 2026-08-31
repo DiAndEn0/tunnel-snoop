@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -17,17 +18,27 @@ import (
 // ParseSockets reads the TCP and TCP6 socket tables under procRoot/net and
 // returns the parsed socket entries. procRoot is typically "/proc" but may
 // be overridden (e.g. in tests) to point at a fixture directory.
+//
+// A single unreadable table is tolerated, since hosts with IPv6 disabled have
+// no net/tcp6 and IPv4-less namespaces have no net/tcp. If neither table can be
+// read the socket view is empty for want of data rather than because nothing is
+// listening, so an error is returned instead of a silently empty slice.
 func ParseSockets(procRoot string) ([]model.SocketEntry, error) {
 	var entries []model.SocketEntry
 
-	v4Entries, err := parseSocketFile(filepath.Join(procRoot, "net", "tcp"), model.ProtoIPv4)
-	if err == nil {
+	v4Entries, v4Err := parseSocketFile(filepath.Join(procRoot, "net", "tcp"), model.ProtoIPv4)
+	if v4Err == nil {
 		entries = append(entries, v4Entries...)
 	}
 
-	v6Entries, err := parseSocketFile(filepath.Join(procRoot, "net", "tcp6"), model.ProtoIPv6)
-	if err == nil {
+	v6Entries, v6Err := parseSocketFile(filepath.Join(procRoot, "net", "tcp6"), model.ProtoIPv6)
+	if v6Err == nil {
 		entries = append(entries, v6Entries...)
+	}
+
+	if v4Err != nil && v6Err != nil {
+		return nil, fmt.Errorf("no readable socket table under %s: %w",
+			filepath.Join(procRoot, "net"), errors.Join(v4Err, v6Err))
 	}
 
 	return entries, nil
