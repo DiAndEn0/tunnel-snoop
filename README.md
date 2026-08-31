@@ -1,7 +1,7 @@
 # tunnelsnoop
 
 [![Go Version](https://img.shields.io/badge/go-1.22+-blue.svg)](https://golang.org)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](#license)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-orange.svg)](#requirements)
 
 **tunnelsnoop** is a zero-privilege CLI monitor and idle reaper for developer workstations. It audits local port-forwards (`kubectl`, `ssh`, `cloudflared`, `ngrok`), alerts on accidental `0.0.0.0` wildcard exposures, monitors client traffic via `/proc`, and automatically terminates abandoned tunnels.
@@ -98,6 +98,16 @@ go test -v ./...
 
 ---
 
+## Contributing
+
+Bug reports and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
+for the build, test, and commit-message conventions.
+
+To report a security vulnerability, please follow [SECURITY.md](SECURITY.md)
+rather than opening a public issue.
+
+---
+
 ## License
 
-This project is licensed under the [MIT License](#license).
+This project is licensed under the [MIT License](LICENSE).
