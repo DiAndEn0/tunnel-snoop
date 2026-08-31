@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/DiAndEn0/tunnel-snoop/internal/model"
@@ -14,7 +15,16 @@ import (
 // FindTunnels scans procRoot for processes whose binary name matches
 // allowedBinaries and correlates their open file descriptors against the
 // LISTEN sockets present in sockets, producing a Tunnel for each match.
-func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries []string) ([]model.Tunnel, error) {
+//
+// Only processes owned by uid are considered. Pass a negative uid to scan every
+// process regardless of owner. Ownership is taken from the owner of the
+// /proc/<pid> directory, which the kernel sets to the process's real UID.
+//
+// The filter matters when running with elevated privileges. Unprivileged, the
+// fd traversal below already fails with EACCES on other users' processes, so
+// the result is the same either way; as root it is the only thing preventing
+// discovery — and therefore reaping — of other users' tunnels.
+func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries []string, uid int) ([]model.Tunnel, error) {
 	listenMap := make(map[uint64]model.SocketEntry)
 	for _, s := range sockets {
 		if s.State == model.StateListen {
@@ -44,6 +54,10 @@ func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries [
 		}
 
 		pidDir := filepath.Join(procRoot, entry.Name())
+
+		if uid >= 0 && !ownedBy(pidDir, uid) {
+			continue
+		}
 
 		// Read comm
 		commBytes, err := os.ReadFile(filepath.Join(pidDir, "comm"))
@@ -109,4 +123,21 @@ func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries [
 	}
 
 	return tunnels, nil
+}
+
+// ownedBy reports whether the /proc/<pid> directory at pidDir belongs to uid.
+// It reports false when ownership cannot be determined, so an unstattable entry
+// is skipped rather than assumed to be the caller's.
+func ownedBy(pidDir string, uid int) bool {
+	info, err := os.Stat(pidDir)
+	if err != nil {
+		return false
+	}
+
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false
+	}
+
+	return int(stat.Uid) == uid
 }

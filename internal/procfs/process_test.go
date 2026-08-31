@@ -22,7 +22,9 @@ func TestFindTunnels(t *testing.T) {
 	}
 
 	allowed := []string{"kubectl", "ssh", "cloudflared", "ngrok"}
-	tunnels, err := procfs.FindTunnels(procRoot, sockets, allowed)
+	// -1 disables ownership filtering: the checked-in fixtures belong to
+	// whichever account cloned the repository, not to a fixed UID.
+	tunnels, err := procfs.FindTunnels(procRoot, sockets, allowed, -1)
 	if err != nil {
 		t.Fatalf("unexpected error finding tunnels: %v", err)
 	}
@@ -73,7 +75,7 @@ func TestFindTunnels_DedupesDuplicateFdsToSameInode(t *testing.T) {
 		},
 	}
 
-	tunnels, err := procfs.FindTunnels(procRoot, sockets, []string{"kubectl"})
+	tunnels, err := procfs.FindTunnels(procRoot, sockets, []string{"kubectl"}, -1)
 	if err != nil {
 		t.Fatalf("unexpected error finding tunnels: %v", err)
 	}
