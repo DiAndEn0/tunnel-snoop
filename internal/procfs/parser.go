@@ -49,15 +49,12 @@ func parseSocketFile(path string, proto model.Protocol) ([]model.SocketEntry, er
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var results []model.SocketEntry
 	scanner := bufio.NewScanner(file)
 
-	// Skip header line
-	if scanner.Scan() {
-		// Header passed
-	}
+	_ = scanner.Scan() // discard the column header line
 
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())

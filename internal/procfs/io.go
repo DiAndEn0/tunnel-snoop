@@ -17,7 +17,7 @@ func ReadProcessIO(procRoot string, pid int) (uint64, uint64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var readBytes, writeBytes uint64
 	scanner := bufio.NewScanner(file)
