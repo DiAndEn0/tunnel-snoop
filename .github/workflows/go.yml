@@ -44,30 +44,3 @@ jobs:
         with:
           name: coverage-report
           path: coverage.out
-  release:
-    name: Release Version
-    runs-on: ubuntu-latest
-
-    # Only run this job if the PR was merged
-    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event.pull_request.merged == true
-
-    steps:
-      # Checkout the repository with fetch-depth set to 0 and fetch-tags set to
-      # true
-      - name: Checkout
-        id: checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Tag Commit
-        id: tag-commit
-        uses: issue-ops/semver@v3.0.0
-        with:
-          manifest-path: package.json
-          workspace: ${{ github.workspace }}
-          ref: main
-
-      - name: Print version
-        run: echo ${{ steps.tag-commit.outputs.version }}
