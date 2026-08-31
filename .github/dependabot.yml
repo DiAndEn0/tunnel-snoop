@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # The Go module has no third-party dependencies, so only the workflow actions
+  # need tracking. Without this they float on mutable major tags.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore
