@@ -16,8 +16,9 @@ const (
 
 func RenderTable(tunnels []model.Tunnel) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%s%-7s %-12s %-20s %-8s %-10s %-10s%s\n",
-		colorBold, "PID", "PROCESS", "LOCAL BINDING", "CLIENTS", "IDLE", "SECURITY", colorReset))
+	// strings.Builder never fails a write, so the Fprintf results are discarded.
+	_, _ = fmt.Fprintf(&sb, "%s%-7s %-12s %-20s %-8s %-10s %-10s%s\n",
+		colorBold, "PID", "PROCESS", "LOCAL BINDING", "CLIENTS", "IDLE", "SECURITY", colorReset)
 	sb.WriteString(strings.Repeat("-", 75) + "\n")
 
 	if len(tunnels) == 0 {
@@ -37,8 +38,8 @@ func RenderTable(tunnels []model.Tunnel) string {
 			idleStr = "active"
 		}
 
-		sb.WriteString(fmt.Sprintf("%-7d %-12s %-20s %-8d %-10s %s\n",
-			tun.PID, tun.ProcessName, binding, tun.ActiveClients, idleStr, secBadge))
+		_, _ = fmt.Fprintf(&sb, "%-7d %-12s %-20s %-8d %-10s %s\n",
+			tun.PID, tun.ProcessName, binding, tun.ActiveClients, idleStr, secBadge)
 	}
 
 	return sb.String()

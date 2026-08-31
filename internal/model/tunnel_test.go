@@ -38,7 +38,18 @@ func testIdleDuration(t *testing.T) {
 	}
 }
 
+// A zero LastActive means the tunnel has never been observed active; without
+// the guard, now.Sub(zeroTime) would report a ~2000-year idle duration and
+// trip any idle-based termination threshold immediately.
+func testIdleDurationZeroLastActive(t *testing.T) {
+	tun := model.Tunnel{}
+	if idle := tun.CalculateIdle(time.Now()); idle != 0 {
+		t.Fatalf("expected zero idle duration for unset LastActive, got %v", idle)
+	}
+}
+
 func TestModel(t *testing.T) {
 	testWildcardDetection(t)
 	testIdleDuration(t)
+	testIdleDurationZeroLastActive(t)
 }

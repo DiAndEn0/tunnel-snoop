@@ -1,7 +1,9 @@
 package procfs_test
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DiAndEn0/tunnel-snoop/internal/model"
@@ -47,5 +49,52 @@ func TestParseSockets(t *testing.T) {
 	s4 := sockets[4]
 	if s4.LocalIP != "::" || s4.LocalPort != 8080 || s4.State != model.StateListen {
 		t.Fatalf("s4 mismatch: %+v", s4)
+	}
+}
+
+// A host with IPv6 disabled has no net/tcp6; the IPv4 table alone is still a
+// valid socket view and must not be reported as a failure.
+func TestParseSocketsToleratesMissingIPv6Table(t *testing.T) {
+	root := t.TempDir()
+	netDir := filepath.Join(root, "net")
+	if err := os.MkdirAll(netDir, 0o755); err != nil {
+		t.Fatalf("failed to create net dir: %v", err)
+	}
+
+	src, err := os.ReadFile(filepath.Join("testdata", "net", "tcp"))
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(netDir, "tcp"), src, 0o644); err != nil {
+		t.Fatalf("failed to write tcp fixture: %v", err)
+	}
+
+	sockets, err := procfs.ParseSockets(root)
+	if err != nil {
+		t.Fatalf("expected missing tcp6 to be tolerated, got: %v", err)
+	}
+	if len(sockets) == 0 {
+		t.Fatalf("expected IPv4 sockets to be parsed")
+	}
+	for _, s := range sockets {
+		if s.Protocol != model.ProtoIPv4 {
+			t.Fatalf("expected only IPv4 entries, got %+v", s)
+		}
+	}
+}
+
+// When neither table can be read the result is empty for want of data, not
+// because nothing is listening. Returning nil there would make a broken procfs
+// mount indistinguishable from an idle host.
+func TestParseSocketsErrorsWhenNoTableReadable(t *testing.T) {
+	sockets, err := procfs.ParseSockets(t.TempDir())
+	if err == nil {
+		t.Fatalf("expected error when no socket table is readable, got nil (sockets: %v)", sockets)
+	}
+	if sockets != nil {
+		t.Fatalf("expected nil sockets alongside error, got %v", sockets)
+	}
+	if !strings.Contains(err.Error(), "no readable socket table") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

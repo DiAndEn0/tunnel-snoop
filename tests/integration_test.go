@@ -34,7 +34,7 @@ func TestLiveSocketDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test listener: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	port := listener.Addr().(*net.TCPAddr).Port
 
