@@ -51,6 +51,10 @@ Usage: tunnelsnoop [flags]
   -kill-idle duration  Terminate tunnels idle longer than duration (e.g. 15m)
   -json                Emit output as structured JSON
   -once                Perform a single scan and exit
+  -port int            Report only tunnels listening on this local port
+  -process string      Report only tunnels whose process name is in this list
+  -exposed-only        Report only tunnels flagged as exposed (0.0.0.0, ::)
+  -min-idle duration   Report only tunnels idle at least this long (e.g. 15m)
   -version             Print version and exit
 ```
 
@@ -70,7 +74,23 @@ tunnelsnoop -kill-idle 15m
 
 # 4. JSON pipeline: alert on wildcard-exposed tunnels
 tunnelsnoop -once -json | jq '.[] | select(.is_wildcard)'
+
+# 5. Reap only idle kubectl tunnels, leaving ssh tunnels alone
+tunnelsnoop -process kubectl -kill-idle 15m
+
+# 6. Audit the exposed tunnels on one port
+tunnelsnoop -once -port 6379 -exposed-only
 ```
+
+### Filtering
+
+`-port`, `-process`, `-exposed-only` and `-min-idle` combine with a logical AND
+and are applied to the reconciled tunnel set before anything else consumes it.
+The filtered set is both what gets reported **and** what `-kill-idle` reaps, so
+`-process kubectl -kill-idle 15m` terminates idle `kubectl` tunnels only.
+
+`-process` takes a comma-separated list (`kubectl,ssh`); names are compared
+case-insensitively and must match in full, so `kube` selects nothing.
 
 ---
 

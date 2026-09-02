@@ -23,6 +23,10 @@ func main() {
 	killIdle := flag.Duration("kill-idle", 0, "Terminate tunnels idle longer than duration (e.g. 15m)")
 	jsonOutput := flag.Bool("json", false, "Output in JSON format")
 	once := flag.Bool("once", false, "Scan once and exit")
+	port := flag.Int("port", 0, "Only report tunnels listening on this local port")
+	processes := flag.String("process", "", "Only report tunnels whose process name is in this comma-separated list")
+	exposedOnly := flag.Bool("exposed-only", false, "Only report tunnels flagged as exposed")
+	minIdle := flag.Duration("min-idle", 0, "Only report tunnels idle at least this long (e.g. 15m)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -35,6 +39,8 @@ func main() {
 		KillIdle: *killIdle,
 	})
 
+	filter := monitor.NewFilter(*port, *processes, *exposedOnly, *minIdle)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -45,6 +51,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error scanning tunnels: %v\n", err)
 			return
 		}
+
+		// Filter before anything downstream looks at the set, so the reaper
+		// acts on exactly what the operator asked to see. "-process kubectl
+		// -kill-idle 15m" is the useful reading of that pair, and reaping
+		// tunnels excluded from the display would be a destructive surprise.
+		tunnels = filter.Apply(tunnels)
 
 		if *killIdle > 0 {
 			for _, tun := range tunnels {
