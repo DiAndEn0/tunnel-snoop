@@ -1,7 +1,8 @@
 // Package monitor maintains in-memory tunnel state across reconciliation
 // passes: it discovers currently-listening tunnel processes, correlates
 // established client connections, tracks byte-level I/O activity to derive
-// idle time, and evicts tunnels whose process has terminated.
+// idle time, and evicts tunnels whose process has terminated or whose
+// listening socket has closed.
 package monitor
 
 import (
@@ -23,13 +24,30 @@ type Config struct {
 	KillIdle        time.Duration
 }
 
-// Engine holds the last-known state for each discovered tunnel PID so that
+// tunnelKey uniquely identifies a tracked tunnel endpoint by its PID and socket
+// inode.
+//
+// Keying on SocketInode (rather than PID alone) allows a single multi-forward
+// process (such as `ssh -L 8080:... -L 9090:...` or `kubectl port-forward`
+// with multiple port arguments) to track and report all listening endpoints
+// independently without clobbering one another.
+//
+// Including PID in the composite key guards against kernel socket inode
+// recycling across process boundaries: if an inode is reused by a different
+// process before the next reconciliation pass, it is treated as a distinct
+// tunnel rather than inheriting stale I/O byte counts or activity timestamps.
+type tunnelKey struct {
+	pid   int
+	inode uint64
+}
+
+// Engine holds the last-known state for each discovered tunnel endpoint so that
 // successive Reconcile calls can detect activity (via I/O byte deltas and
 // active client counts) and compute idle durations relative to LastActive.
 type Engine struct {
 	cfg     Config
 	mu      sync.Mutex
-	tunnels map[int]*model.Tunnel
+	tunnels map[tunnelKey]*model.Tunnel
 }
 
 // portKey identifies a listening endpoint by protocol and local port so that
@@ -78,7 +96,7 @@ func NewEngine(cfg Config) *Engine {
 	}
 	return &Engine{
 		cfg:     cfg,
-		tunnels: make(map[int]*model.Tunnel),
+		tunnels: make(map[tunnelKey]*model.Tunnel),
 	}
 }
 
@@ -87,9 +105,9 @@ func NewEngine(cfg Config) *Engine {
 // established client connections per local port, reads each tunnel
 // process's cumulative I/O byte counters, and updates LastActive/IdleDuration
 // accordingly. Tunnels previously tracked but no longer discovered (i.e.
-// their process has terminated or is no longer listening) are evicted from
-// internal state. The returned slice reflects the current, post-reconcile
-// view of all live tunnels.
+// their process has terminated or their specific listening socket has closed)
+// are evicted from internal state. The returned slice reflects the current,
+// post-reconcile view of all live tunnels.
 func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -121,12 +139,13 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 		clientCounts[key][s.LocalIP]++
 	}
 
-	activePIDs := make(map[int]bool)
+	activeKeys := make(map[tunnelKey]bool)
 	result := make([]model.Tunnel, 0, len(discovered))
 
 	for _, d := range discovered {
-		activePIDs[d.PID] = true
-		cached, exists := e.tunnels[d.PID]
+		key := tunnelKey{pid: d.PID, inode: d.SocketInode}
+		activeKeys[key] = true
+		cached, exists := e.tunnels[key]
 
 		activeClients := countClients(clientCounts, d)
 		readBytes, writeBytes, _ := procfs.ReadProcessIO(e.cfg.ProcRoot, d.PID)
@@ -138,7 +157,7 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 			d.BytesRead = readBytes
 			d.BytesWritten = writeBytes
 			d.IdleDuration = 0
-			e.tunnels[d.PID] = &d
+			e.tunnels[key] = &d
 			result = append(result, d)
 		} else {
 			cached.ActiveClients = activeClients
@@ -153,10 +172,10 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 		}
 	}
 
-	// Evict tunnels whose process has vanished or is no longer listening.
-	for pid := range e.tunnels {
-		if !activePIDs[pid] {
-			delete(e.tunnels, pid)
+	// Evict tunnels whose process vanished or whose socket closed.
+	for key := range e.tunnels {
+		if !activeKeys[key] {
+			delete(e.tunnels, key)
 		}
 	}
 
