@@ -56,8 +56,8 @@ func TestEngineReconciliation_UnknownBinaryYieldsNoTunnels(t *testing.T) {
 // buildFixture creates a self-contained proc+net root with a single
 // "kubectl" tunnel process (pid 101) listening on 127.0.0.1:5432 (inode
 // 45678), with no established client connections, so tests can control
-// ActiveClients and I/O byte counters precisely.
-func buildFixture(t *testing.T, readBytes, writeBytes uint64) (procRoot, netRoot string) {
+// ActiveClients and the syscall byte counters precisely.
+func buildFixture(t *testing.T, rchar, wchar uint64) (procRoot, netRoot string) {
 	t.Helper()
 	root := t.TempDir()
 
@@ -78,7 +78,7 @@ func buildFixture(t *testing.T, readBytes, writeBytes uint64) (procRoot, netRoot
 	if err := os.WriteFile(filepath.Join(pidDir, "cmdline"), []byte("kubectl\x00port-forward\x00svc/db\x005432:5432\x00"), 0o644); err != nil {
 		t.Fatalf("failed to write cmdline: %v", err)
 	}
-	writeIO(t, pidDir, readBytes, writeBytes)
+	writeIO(t, pidDir, rchar, wchar)
 	if err := os.Symlink("socket:[45678]", filepath.Join(pidDir, "fd", "3")); err != nil {
 		t.Fatalf("failed to symlink fd: %v", err)
 	}
@@ -92,9 +92,16 @@ func buildFixture(t *testing.T, readBytes, writeBytes uint64) (procRoot, netRoot
 	return procRoot, netRoot
 }
 
-func writeIO(t *testing.T, pidDir string, readBytes, writeBytes uint64) {
+// writeIO writes a /proc/<pid>/io fixture with the given rchar/wchar syscall
+// counters. The block-device counters are pinned to constants because a tunnel
+// forwards socket traffic, which never reaches the block layer: holding them
+// still is what lets these tests distinguish "reads the syscall counters" from
+// "reads the block counters".
+func writeIO(t *testing.T, pidDir string, rchar, wchar uint64) {
 	t.Helper()
-	contents := "read_bytes: " + strconv.FormatUint(readBytes, 10) + "\nwrite_bytes: " + strconv.FormatUint(writeBytes, 10) + "\n"
+	contents := "rchar: " + strconv.FormatUint(rchar, 10) +
+		"\nwchar: " + strconv.FormatUint(wchar, 10) +
+		"\nread_bytes: 4096\nwrite_bytes: 8192\n"
 	if err := os.WriteFile(filepath.Join(pidDir, "io"), []byte(contents), 0o644); err != nil {
 		t.Fatalf("failed to write io: %v", err)
 	}
@@ -121,7 +128,7 @@ func TestEngineReconciliation_HoldsLastActiveWhenIdle(t *testing.T) {
 		t.Fatalf("expected 0 active clients, got %d", first[0].ActiveClients)
 	}
 	if first[0].BytesRead != 4096 || first[0].BytesWritten != 8192 {
-		t.Fatalf("unexpected io bytes: read=%d write=%d", first[0].BytesRead, first[0].BytesWritten)
+		t.Fatalf("unexpected syscall bytes: read=%d write=%d", first[0].BytesRead, first[0].BytesWritten)
 	}
 	if !first[0].LastActive.Equal(t0) {
 		t.Fatalf("expected LastActive to equal t0 on first sighting")
@@ -130,7 +137,7 @@ func TestEngineReconciliation_HoldsLastActiveWhenIdle(t *testing.T) {
 		t.Fatalf("expected 0 idle duration on first sighting, got %v", first[0].IdleDuration)
 	}
 
-	// Second reconciliation with unchanged IO and no clients, at a later
+	// Second reconciliation with unchanged counters and no clients, at a later
 	// timestamp: LastActive must not advance, but IdleDuration must reflect
 	// the elapsed gap.
 	t1 := t0.Add(5 * time.Second)
@@ -148,8 +155,9 @@ func TestEngineReconciliation_HoldsLastActiveWhenIdle(t *testing.T) {
 		t.Fatalf("expected idle duration of 5s, got %v", second[0].IdleDuration)
 	}
 
-	// Third reconciliation with a change in I/O bytes (activity resumes):
-	// LastActive must advance and IdleDuration must reset to 0.
+	// Third reconciliation with a change in the syscall byte counters
+	// (activity resumes): LastActive must advance and IdleDuration must reset
+	// to 0.
 	writeIO(t, filepath.Join(procRoot, "101"), 4096, 16384)
 	t2 := t1.Add(5 * time.Second)
 	third, err := eng.Reconcile(t2)
@@ -157,13 +165,69 @@ func TestEngineReconciliation_HoldsLastActiveWhenIdle(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !third[0].LastActive.Equal(t2) {
-		t.Fatalf("expected LastActive to advance to t2 on IO activity, got %v", third[0].LastActive)
+		t.Fatalf("expected LastActive to advance to t2 on syscall activity, got %v", third[0].LastActive)
 	}
 	if third[0].IdleDuration != 0 {
 		t.Fatalf("expected idle duration to reset to 0 after activity, got %v", third[0].IdleDuration)
 	}
 	if third[0].BytesWritten != 16384 {
 		t.Fatalf("expected updated write byte count of 16384, got %d", third[0].BytesWritten)
+	}
+}
+
+// TestEngineReconciliation_SocketTrafficRefreshesLastActive is the regression
+// test for a tunnel being reaped while it was busy. A port-forward's payload
+// is socket traffic, which the kernel accounts in rchar/wchar and never in the
+// block-layer read_bytes/write_bytes counters. While the engine watched the
+// block counters, a tunnel pushing gigabytes looked motionless, aged past the
+// idle threshold, and -kill-idle terminated a live session.
+//
+// The fixture holds read_bytes/write_bytes constant and advances only
+// rchar/wchar, with zero connected clients so nothing else can refresh
+// LastActive.
+func TestEngineReconciliation_SocketTrafficRefreshesLastActive(t *testing.T) {
+	procRoot, netRoot := buildFixture(t, 1_000, 2_000)
+
+	eng := monitor.NewEngine(monitor.Config{
+		ProcRoot:        procRoot,
+		NetRoot:         netRoot,
+		AllowedBinaries: []string{"kubectl"},
+	})
+
+	t0 := time.Now()
+	first, err := eng.Reconcile(t0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("expected 1 tunnel, got %d", len(first))
+	}
+	if first[0].ActiveClients != 0 {
+		t.Fatalf("expected 0 active clients, got %d", first[0].ActiveClients)
+	}
+	if first[0].BytesRead != 1_000 || first[0].BytesWritten != 2_000 {
+		t.Fatalf("expected bytes_read/bytes_written to carry rchar/wchar, got %d/%d",
+			first[0].BytesRead, first[0].BytesWritten)
+	}
+
+	// The tunnel forwards traffic: rchar/wchar climb, the block counters do
+	// not move at all.
+	writeIO(t, filepath.Join(procRoot, "101"), 9_000_000, 8_000_000)
+
+	t1 := t0.Add(30 * time.Second)
+	second, err := eng.Reconcile(t1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !second[0].LastActive.Equal(t1) {
+		t.Fatalf("expected LastActive to advance to t1 on socket traffic, got %v", second[0].LastActive)
+	}
+	if second[0].IdleDuration != 0 {
+		t.Fatalf("expected idle duration to reset to 0 on socket traffic, got %v", second[0].IdleDuration)
+	}
+	if second[0].BytesRead != 9_000_000 || second[0].BytesWritten != 8_000_000 {
+		t.Fatalf("expected updated syscall byte counts 9000000/8000000, got %d/%d",
+			second[0].BytesRead, second[0].BytesWritten)
 	}
 }
 

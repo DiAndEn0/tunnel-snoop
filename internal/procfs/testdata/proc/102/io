@@ -1,0 +1,4 @@
+rchar: 555
+wchar: not-a-number
+read_bytes 999
+syscr: 3

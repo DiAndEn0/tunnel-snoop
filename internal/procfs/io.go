@@ -8,18 +8,43 @@ import (
 	"strings"
 )
 
-// ReadProcessIO reads the /proc/<pid>/io accounting file rooted at procRoot
-// and returns the cumulative bytes read from and written to storage by the
-// process, as reported by the kernel's read_bytes and write_bytes fields.
-func ReadProcessIO(procRoot string, pid int) (uint64, uint64, error) {
+// IOCounters holds the cumulative byte counters the kernel exposes in
+// /proc/<pid>/io. The two pairs measure different things and must not be used
+// interchangeably.
+//
+// RChar and WChar count every byte the process moved through the read(2) and
+// write(2) syscall families, whatever the underlying file description was —
+// including sockets. ReadBytes and WriteBytes count only the bytes that
+// actually crossed the block layer, so they stay flat for a process whose work
+// is purely network traffic.
+//
+// Both pairs are returned together, rather than one derived "bytes moved"
+// figure, so that the choice of signal is visible at the call site instead of
+// being silently baked in here.
+type IOCounters struct {
+	RChar      uint64
+	WChar      uint64
+	ReadBytes  uint64
+	WriteBytes uint64
+}
+
+// ReadProcessIO reads the /proc/<pid>/io accounting file rooted at procRoot and
+// returns the process's cumulative I/O counters.
+//
+// Fields that are absent, malformed, or not parseable as an unsigned integer
+// are left at zero rather than failing the whole read: the exact field set in
+// this file varies with kernel version and configuration, and losing every
+// counter because one line is unusable would report a busy process as
+// motionless.
+func ReadProcessIO(procRoot string, pid int) (IOCounters, error) {
 	path := filepath.Join(procRoot, strconv.Itoa(pid), "io")
 	file, err := os.Open(path)
 	if err != nil {
-		return 0, 0, err
+		return IOCounters{}, err
 	}
 	defer func() { _ = file.Close() }()
 
-	var readBytes, writeBytes uint64
+	var counters IOCounters
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -34,12 +59,16 @@ func ReadProcessIO(procRoot string, pid int) (uint64, uint64, error) {
 		}
 
 		switch key {
+		case "rchar":
+			counters.RChar = val
+		case "wchar":
+			counters.WChar = val
 		case "read_bytes":
-			readBytes = val
+			counters.ReadBytes = val
 		case "write_bytes":
-			writeBytes = val
+			counters.WriteBytes = val
 		}
 	}
 
-	return readBytes, writeBytes, scanner.Err()
+	return counters, scanner.Err()
 }
