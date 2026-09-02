@@ -71,7 +71,11 @@ func NewFilter(port int, processes string, exposedOnly bool, minIdle time.Durati
 // point for it, so it is kept as one small predicate that the merge can
 // rewrite in a single line rather than a condition spread over call sites.
 func IsExposed(tunnel model.Tunnel) bool {
-	return tunnel.IsWildcard
+	exposure := tunnel.Exposure
+	if exposure == "" {
+		exposure = tunnel.CheckExposure()
+	}
+	return exposure != model.ExposureLoopback
 }
 
 // AnyExposed reports whether tunnels holds at least one exposed tunnel.
