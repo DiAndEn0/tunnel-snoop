@@ -7,6 +7,11 @@ tunnelsnoop \- zero-privilege port-forward monitor and idle reaper
 [\fB\-kill\-idle\fR \fIduration\fR]
 [\fB\-json\fR]
 [\fB\-once\fR]
+[\fB\-port\fR \fIport\fR]
+[\fB\-process\fR \fIlist\fR]
+[\fB\-exposed\-only\fR]
+[\fB\-min\-idle\fR \fIduration\fR]
+[\fB\-fail\-on\-exposed\fR]
 [\fB\-version\fR]
 .SH DESCRIPTION
 .B tunnelsnoop
@@ -22,6 +27,21 @@ It audits local network exposure by classifying every binding as loopback, LAN,
 public or wildcard, tracks client TCP connections and process syscall byte
 counters via \fI/proc\fR, and optionally terminates idle tunnels after a
 specified inactivity period.
+.PP
+The result filters
+.RB ( \-port ,
+.BR \-process ,
+.BR \-exposed\-only ,
+.BR \-min\-idle )
+combine with a logical AND and are applied to the reconciled tunnel set before
+anything else consumes it. The filtered set is therefore both what is reported
+and what
+.B \-kill\-idle
+reaps: \fBtunnelsnoop \-process kubectl \-kill\-idle 15m\fR terminates idle
+.BR kubectl (1)
+tunnels and leaves an idle
+.BR ssh (1)
+tunnel untouched.
 .PP
 Operation requires no root privileges; it inspects only processes owned by the
 invoking user's UID.
@@ -44,6 +64,36 @@ Emit streaming structured JSON output instead of the interactive ANSI terminal d
 Perform a single discovery pass and exit immediately without clearing the screen.
 Useful for login profiles, CI pipelines, and audit scripts.
 .TP
+.BI \-port " port"
+Report only tunnels listening on local port \fIport\fR.
+Defaults to \fB0\fR (no port filter).
+.TP
+.BI \-process " list"
+Report only tunnels whose process name appears in \fIlist\fR, a
+comma-separated set of names (e.g., \fBkubectl,ssh\fR).
+Names are compared case-insensitively and must match in full; a substring such
+as \fBkube\fR selects nothing.
+Defaults to the empty list (no process filter).
+.TP
+.B \-exposed\-only
+Report only tunnels flagged as exposed, that is, those bound to a wildcard
+address (\fB0.0.0.0\fR or \fB::\fR).
+.TP
+.BI \-min\-idle " duration"
+Report only tunnels idle for at least \fIduration\fR (e.g., \fB15m\fR, \fB1h\fR).
+The comparison is inclusive.
+Defaults to \fB0\fR (no idle filter).
+.TP
+.B \-fail\-on\-exposed
+Exit with status \fB1\fR when at least one exposed tunnel is found, so that the
+command can be used as a gate in a CI job or a pre\-commit hook.
+The gate considers the filtered set only, and the report is still written in
+full.
+Under
+.B \-once
+the status is decided by the single scan; in continuous mode any exposure seen
+during the run is remembered and applied when the monitor is interrupted.
+.TP
 .B \-version
 Print the release version and exit.
 Binaries built outside the release pipeline report \fBdev\fR.
@@ -53,6 +103,13 @@ Binaries built outside the release pipeline report \fBdev\fR.
 Normal termination, including a completed
 .B \-once
 scan and a monitor loop interrupted by \fBSIGINT\fR or \fBSIGTERM\fR.
+When
+.B \-fail\-on\-exposed
+is not set, this status is returned regardless of any exposure found.
+.TP
+.B 1
+.B \-fail\-on\-exposed
+was set and at least one exposed tunnel was seen in the filtered set.
 .TP
 .B 2
 Invalid command-line arguments. A usage summary is written to standard error.
@@ -100,6 +157,26 @@ Continuously reap tunnels idle for longer than 15 minutes:
 .PP
 .EX
 tunnelsnoop \-kill\-idle 15m
+.EE
+.PP
+Reap only idle
+.BR kubectl (1)
+tunnels, leaving every other tunnel alone:
+.PP
+.EX
+tunnelsnoop \-process kubectl \-kill\-idle 15m
+.EE
+.PP
+Audit the tunnels exposed on a specific port:
+.PP
+.EX
+tunnelsnoop \-once \-port 6379 \-exposed\-only
+.EE
+.PP
+Fail a CI step when any tunnel is exposed on a wildcard address:
+.PP
+.EX
+tunnelsnoop \-once \-exposed\-only \-fail\-on\-exposed
 .EE
 .PP
 Emit JSON output and filter exposed tunnels with
