@@ -11,6 +11,7 @@ tunnelsnoop \- zero-privilege port-forward monitor and idle reaper
 [\fB\-process\fR \fIlist\fR]
 [\fB\-exposed\-only\fR]
 [\fB\-min\-idle\fR \fIduration\fR]
+[\fB\-fail\-on\-exposed\fR]
 [\fB\-version\fR]
 .SH DESCRIPTION
 .B tunnelsnoop
@@ -83,6 +84,16 @@ Report only tunnels idle for at least \fIduration\fR (e.g., \fB15m\fR, \fB1h\fR)
 The comparison is inclusive.
 Defaults to \fB0\fR (no idle filter).
 .TP
+.B \-fail\-on\-exposed
+Exit with status \fB1\fR when at least one exposed tunnel is found, so that the
+command can be used as a gate in a CI job or a pre\-commit hook.
+The gate considers the filtered set only, and the report is still written in
+full.
+Under
+.B \-once
+the status is decided by the single scan; in continuous mode any exposure seen
+during the run is remembered and applied when the monitor is interrupted.
+.TP
 .B \-version
 Print the release version and exit.
 Binaries built outside the release pipeline report \fBdev\fR.
@@ -92,6 +103,13 @@ Binaries built outside the release pipeline report \fBdev\fR.
 Normal termination, including a completed
 .B \-once
 scan and a monitor loop interrupted by \fBSIGINT\fR or \fBSIGTERM\fR.
+When
+.B \-fail\-on\-exposed
+is not set, this status is returned regardless of any exposure found.
+.TP
+.B 1
+.B \-fail\-on\-exposed
+was set and at least one exposed tunnel was seen in the filtered set.
 .TP
 .B 2
 Invalid command-line arguments. A usage summary is written to standard error.
@@ -146,6 +164,12 @@ Audit the tunnels exposed on a specific port:
 .PP
 .EX
 tunnelsnoop \-once \-port 6379 \-exposed\-only
+.EE
+.PP
+Fail a CI step when any tunnel is exposed on a wildcard address:
+.PP
+.EX
+tunnelsnoop \-once \-exposed\-only \-fail\-on\-exposed
 .EE
 .PP
 Emit JSON output and filter exposed tunnels with
