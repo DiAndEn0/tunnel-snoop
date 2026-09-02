@@ -4,14 +4,15 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-orange.svg)](#requirements)
 
-**tunnelsnoop** is a zero-privilege CLI monitor and idle reaper for developer workstations. It audits local port-forwards (`kubectl`, `ssh`, `cloudflared`, `ngrok`), alerts on accidental `0.0.0.0` wildcard exposures, monitors client traffic via `/proc`, and automatically terminates abandoned tunnels.
+**tunnelsnoop** is a zero-privilege CLI monitor and idle reaper for developer workstations. It audits local port-forwards (`kubectl`, `ssh`, `cloudflared`, `ngrok`), alerts on accidental `0.0.0.0` wildcard and LAN-reachable exposures, monitors client traffic via `/proc`, and automatically terminates abandoned tunnels.
 
 ```text
 tunnelsnoop - Active Port-Forward Monitor [14:22:05]
 
-PID     PROCESS      LOCAL BINDING        CLIENTS  IDLE       SECURITY  
----------------------------------------------------------------------------
+PID     PROCESS      LOCAL BINDING        CLIENTS  IDLE       SECURITY          
+--------------------------------------------------------------------------------
 14021   kubectl      127.0.0.1:5432       1        active     [SAFE]
+16104   ssh          192.168.1.40:2222    2        active     [EXPOSED LAN]
 15882   ssh          0.0.0.0:6379         0        4m12s      [EXPOSED 0.0.0.0]
 ```
 

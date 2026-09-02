@@ -38,6 +38,7 @@ type Tunnel struct {
 	Protocol      Protocol  `json:"protocol"`
 	SocketInode   uint64    `json:"socket_inode"`
 	IsWildcard    bool      `json:"is_wildcard"`
+	Exposure      Exposure  `json:"exposure"`
 	FirstSeen     time.Time `json:"first_seen"`
 	LastActive    time.Time `json:"last_active"`
 	ActiveClients int       `json:"active_clients"`
@@ -54,6 +55,15 @@ type Tunnel struct {
 	BytesWritten uint64 `json:"bytes_written"`
 
 	IdleDuration time.Duration `json:"idle_duration"`
+}
+
+// CheckExposure classifies the tunnel's local binding. It is a superset of
+// CheckWildcard: IsWildcard is retained because it is part of the JSON contract
+// and because the client-counting logic needs the specific "accepts on every
+// interface" fact, while Exposure answers the broader reachability question
+// that the security badge reports.
+func (t *Tunnel) CheckExposure() Exposure {
+	return ClassifyExposure(t.LocalAddress)
 }
 
 func (t *Tunnel) CheckWildcard() bool {
