@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.3.0](https://github.com/DiAndEn0/tunnel-snoop/compare/v1.2.0...v1.3.0) (2026-09-02)
+
+
+### Features
+
+* add -fail-on-exposed audit gate exit code ([17b6865](https://github.com/DiAndEn0/tunnel-snoop/commit/17b68658c4079b2042e6c484c95f7b418a2f18b5))
+* add result filters for port, process, exposure and idle time ([22bebd5](https://github.com/DiAndEn0/tunnel-snoop/commit/22bebd5d6b6850d0cbaee89cb4b18dda69837be2))
+* classify tunnel exposure beyond literal wildcards ([8132734](https://github.com/DiAndEn0/tunnel-snoop/commit/8132734295d4ef1d22ee6e941ce7785f86f4ad3d))
+* **cmd,monitor:** add result filters and fail-on-exposed CI audit gate ([f550b94](https://github.com/DiAndEn0/tunnel-snoop/commit/f550b94c7d2d73b65bbcf85fe3814bb372cf3fc5))
+* **model,ui:** classify exposure tiers and derive idle activity from socket counters ([38a9ce0](https://github.com/DiAndEn0/tunnel-snoop/commit/38a9ce0c224c82be7c3213511ef3e46c91f3ac67))
+* **monitor:** sync IsExposed with 4-tier exposure model ([aad8dcd](https://github.com/DiAndEn0/tunnel-snoop/commit/aad8dcd7cb9062efc5d769b91e82d3e92acb6b48))
+* **monitor:** sync IsExposed with 4-tier exposure model ([202196e](https://github.com/DiAndEn0/tunnel-snoop/commit/202196e2ff71251ed4dbb9cc77d1b4e1c6729080))
+
+
+### Bug Fixes
+
+* **cmd:** exit with code 2 on scan failure to fail closed ([828cc56](https://github.com/DiAndEn0/tunnel-snoop/commit/828cc56518ff0522142d95c8da01bcea4450444e))
+* derive tunnel activity from socket syscall counters ([23a2dcc](https://github.com/DiAndEn0/tunnel-snoop/commit/23a2dcc036e5a324975dc58e52b640d4b45ab3ad))
+* **monitor:** ignore unreadable procfs io errors to prevent false idle resets ([fea7a70](https://github.com/DiAndEn0/tunnel-snoop/commit/fea7a7021825609cc97732f5935bd81fe5e74f29))
+* **monitor:** key engine state by PID and socket inode composite ([36461ed](https://github.com/DiAndEn0/tunnel-snoop/commit/36461ede225bf86ed8d257bcc92de31d4894f8e6))
+* **monitor:** key engine state by PID and socket inode composite ([5350e37](https://github.com/DiAndEn0/tunnel-snoop/commit/5350e37e724f43b2b3fe51bdb65b87fd2612dbcd))
+
 ## [1.2.0](https://github.com/DiAndEn0/tunnel-snoop/compare/v1.1.0...v1.2.0) (2026-08-31)
 
 
