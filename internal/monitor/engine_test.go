@@ -416,3 +416,53 @@ func TestEngineReconciliation_MultipleListenersUnderSinglePID(t *testing.T) {
 		t.Fatalf("pass 3: expected remaining tunnel on port 9090 inode 1002, got port %d inode %d", tunnels3[0].LocalPort, tunnels3[0].SocketInode)
 	}
 }
+
+// TestEngineReconciliation_ProcfsIOErrorDoesNotResetIdleClock verifies that when
+// /proc/<pid>/io becomes unreadable, the zero return does not get interpreted as an
+// activity delta that would spuriously reset the idle clock or advance LastActive.
+func TestEngineReconciliation_ProcfsIOErrorDoesNotResetIdleClock(t *testing.T) {
+	procRoot, netRoot := buildFixture(t, 1000, 2000)
+
+	eng := monitor.NewEngine(monitor.Config{
+		ProcRoot:        procRoot,
+		NetRoot:         netRoot,
+		AllowedBinaries: []string{"kubectl"},
+	})
+
+	t0 := time.Now()
+	first, err := eng.Reconcile(t0)
+	if err != nil {
+		t.Fatalf("unexpected error on pass 1: %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("expected 1 tunnel on pass 1, got %d", len(first))
+	}
+
+	// Wait 10s and reconcile: idle duration should be 10s
+	t1 := t0.Add(10 * time.Second)
+	second, err := eng.Reconcile(t1)
+	if err != nil {
+		t.Fatalf("unexpected error on pass 2: %v", err)
+	}
+	if second[0].IdleDuration != 10*time.Second {
+		t.Fatalf("expected 10s idle duration, got %v", second[0].IdleDuration)
+	}
+
+	// Make /proc/101/io unreadable by removing it
+	if err := os.Remove(filepath.Join(procRoot, "101", "io")); err != nil {
+		t.Fatalf("failed to remove io file: %v", err)
+	}
+
+	// Pass 3: at t2 (+20s), io is missing. LastActive must NOT advance, IdleDuration must be 20s.
+	t2 := t0.Add(20 * time.Second)
+	third, err := eng.Reconcile(t2)
+	if err != nil {
+		t.Fatalf("unexpected error on pass 3: %v", err)
+	}
+	if !third[0].LastActive.Equal(t0) {
+		t.Fatalf("expected LastActive to stay at t0 despite missing io, got %v", third[0].LastActive)
+	}
+	if third[0].IdleDuration != 20*time.Second {
+		t.Fatalf("expected 20s idle duration despite missing io, got %v", third[0].IdleDuration)
+	}
+}
