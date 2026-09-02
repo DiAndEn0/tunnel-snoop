@@ -237,3 +237,118 @@ func TestEngineReconciliation_EvictsTerminatedProcess(t *testing.T) {
 		t.Fatalf("expected 0 tunnels after process termination, got %d", len(gone))
 	}
 }
+
+// TestEngineReconciliation_MultipleListenersUnderSinglePID tests that a single
+// process (e.g. ssh -L 8080:... -L 9090:...) holding multiple listening sockets
+// reports ALL tunnels independently without deduplicating or dropping listeners.
+func TestEngineReconciliation_MultipleListenersUnderSinglePID(t *testing.T) {
+	root := t.TempDir()
+	procRoot := filepath.Join(root, "proc")
+	netRoot := filepath.Join(root, "net_root")
+	pidDir := filepath.Join(procRoot, "101")
+
+	if err := os.MkdirAll(filepath.Join(pidDir, "fd"), 0o755); err != nil {
+		t.Fatalf("failed to build proc root: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(netRoot, "net"), 0o755); err != nil {
+		t.Fatalf("failed to build net root: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(pidDir, "comm"), []byte("ssh\n"), 0o644); err != nil {
+		t.Fatalf("failed to write comm: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pidDir, "cmdline"), []byte("ssh\x00-L\x008080:localhost:8080\x00-L\x009090:localhost:9090\x00"), 0o644); err != nil {
+		t.Fatalf("failed to write cmdline: %v", err)
+	}
+	writeIO(t, pidDir, 1000, 2000)
+
+	// Two listening sockets under the same PID:
+	// Inode 1001: 127.0.0.1:8080 (0100007F:1F90)
+	// Inode 1002: 0.0.0.0:9090   (00000000:2382)
+	if err := os.Symlink("socket:[1001]", filepath.Join(pidDir, "fd", "3")); err != nil {
+		t.Fatalf("failed to symlink fd 3: %v", err)
+	}
+	if err := os.Symlink("socket:[1002]", filepath.Join(pidDir, "fd", "4")); err != nil {
+		t.Fatalf("failed to symlink fd 4: %v", err)
+	}
+
+	tcpContents := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+		"   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 1001 1 0000000000000000 100 0 0 10 0\n" +
+		"   1: 00000000:2382 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 1002 1 0000000000000000 100 0 0 10 0\n"
+	if err := os.WriteFile(filepath.Join(netRoot, "net", "tcp"), []byte(tcpContents), 0o644); err != nil {
+		t.Fatalf("failed to write net/tcp: %v", err)
+	}
+
+	eng := monitor.NewEngine(monitor.Config{
+		ProcRoot:        procRoot,
+		NetRoot:         netRoot,
+		AllowedBinaries: []string{"ssh"},
+	})
+
+	t0 := time.Now()
+	tunnels1, err := eng.Reconcile(t0)
+	if err != nil {
+		t.Fatalf("unexpected error on pass 1: %v", err)
+	}
+	if len(tunnels1) != 2 {
+		t.Fatalf("pass 1: expected 2 tunnels, got %d", len(tunnels1))
+	}
+
+	// Verify both sockets exist and are distinct
+	found8080, found9090 := false, false
+	for _, tun := range tunnels1 {
+		if tun.LocalPort == 8080 && tun.SocketInode == 1001 && tun.LocalAddress == "127.0.0.1" && !tun.IsWildcard {
+			found8080 = true
+		}
+		if tun.LocalPort == 9090 && tun.SocketInode == 1002 && tun.LocalAddress == "0.0.0.0" && tun.IsWildcard {
+			found9090 = true
+		}
+	}
+	if !found8080 || !found9090 {
+		t.Fatalf("pass 1: missing expected tunnels, found 8080=%v, 9090(wildcard)=%v", found8080, found9090)
+	}
+
+	// Pass 2: state must be preserved across iterations without clobbering
+	t1 := t0.Add(5 * time.Second)
+	tunnels2, err := eng.Reconcile(t1)
+	if err != nil {
+		t.Fatalf("unexpected error on pass 2: %v", err)
+	}
+	if len(tunnels2) != 2 {
+		t.Fatalf("pass 2: expected 2 tunnels, got %d", len(tunnels2))
+	}
+	found8080, found9090 = false, false
+	for _, tun := range tunnels2 {
+		if tun.LocalPort == 8080 && tun.SocketInode == 1001 && tun.LocalAddress == "127.0.0.1" && !tun.IsWildcard {
+			found8080 = true
+		}
+		if tun.LocalPort == 9090 && tun.SocketInode == 1002 && tun.LocalAddress == "0.0.0.0" && tun.IsWildcard {
+			found9090 = true
+		}
+	}
+	if !found8080 || !found9090 {
+		t.Fatalf("pass 2: missing expected tunnels, found 8080=%v, 9090(wildcard)=%v", found8080, found9090)
+	}
+
+	// Pass 3: Close one listener (remove inode 1001 from tcp and fd 3)
+	if err := os.Remove(filepath.Join(pidDir, "fd", "3")); err != nil {
+		t.Fatalf("failed to remove fd 3: %v", err)
+	}
+	tcpContentsOnly9090 := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+		"   1: 00000000:2382 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 1002 1 0000000000000000 100 0 0 10 0\n"
+	if err := os.WriteFile(filepath.Join(netRoot, "net", "tcp"), []byte(tcpContentsOnly9090), 0o644); err != nil {
+		t.Fatalf("failed to write net/tcp: %v", err)
+	}
+
+	t2 := t1.Add(5 * time.Second)
+	tunnels3, err := eng.Reconcile(t2)
+	if err != nil {
+		t.Fatalf("unexpected error on pass 3: %v", err)
+	}
+	if len(tunnels3) != 1 {
+		t.Fatalf("pass 3: expected 1 tunnel after closing one listener, got %d", len(tunnels3))
+	}
+	if tunnels3[0].LocalPort != 9090 || tunnels3[0].SocketInode != 1002 {
+		t.Fatalf("pass 3: expected remaining tunnel on port 9090 inode 1002, got port %d inode %d", tunnels3[0].LocalPort, tunnels3[0].SocketInode)
+	}
+}
