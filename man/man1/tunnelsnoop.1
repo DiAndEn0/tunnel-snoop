@@ -18,10 +18,10 @@ established by tools such as
 and
 .BR ngrok (1).
 .PP
-It audits local network exposure by flagging non-loopback wildcard bindings
-(e.g., \fB0.0.0.0\fR or \fB::\fR), tracks client TCP connections and process
-I/O byte counters via \fI/proc\fR, and optionally terminates idle tunnels after
-a specified inactivity period.
+It audits local network exposure by classifying every binding as loopback, LAN,
+public or wildcard, tracks client TCP connections and process syscall byte
+counters via \fI/proc\fR, and optionally terminates idle tunnels after a
+specified inactivity period.
 .PP
 Operation requires no root privileges; it inspects only processes owned by the
 invoking user's UID.
@@ -67,6 +67,13 @@ Tunnels bound to \fB0.0.0.0\fR or \fB::\fR listen on all local network interface
 exposing forwarded services to other devices on the same LAN or Wi-Fi network.
 .B tunnelsnoop
 highlights these with a prominent \fB[EXPOSED 0.0.0.0]\fR indicator.
+.TP
+.B LAN and Public Bindings
+A tunnel bound to a specific non-loopback address is not a wildcard but is still
+reachable from off-host. Bindings on RFC 1918, link-local, carrier-grade NAT or
+IPv6 unique-local addresses are marked \fB[EXPOSED LAN]\fR; globally routable
+addresses, and any address that cannot be parsed, are marked
+\fB[EXPOSED PUBLIC]\fR. Only a loopback binding is reported as \fB[SAFE]\fR.
 .TP
 .B PID Recycling Protection
 Before signaling an idle process,

@@ -37,6 +37,13 @@ func TestFindTunnels(t *testing.T) {
 	if tun.PID != 101 || tun.ProcessName != "kubectl" || tun.LocalPort != 5432 {
 		t.Fatalf("tunnel mismatch: %+v", tun)
 	}
+
+	// Discovery is the only place a Tunnel is built from a socket, so it is
+	// the only place that can populate Exposure. An unclassified tunnel would
+	// reach the renderer with an empty tier.
+	if tun.Exposure != model.ExposureLoopback {
+		t.Fatalf("expected loopback exposure for a 127.0.0.1 binding, got %q", tun.Exposure)
+	}
 }
 
 // TestFindTunnels_DedupesDuplicateFdsToSameInode verifies that when a

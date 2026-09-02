@@ -42,7 +42,7 @@ type tunnelKey struct {
 }
 
 // Engine holds the last-known state for each discovered tunnel endpoint so that
-// successive Reconcile calls can detect activity (via I/O byte deltas and
+// successive Reconcile calls can detect activity (via syscall byte deltas and
 // active client counts) and compute idle durations relative to LastActive.
 type Engine struct {
 	cfg     Config
@@ -103,11 +103,11 @@ func NewEngine(cfg Config) *Engine {
 // Reconcile performs a single discovery-and-update pass: it re-parses the
 // socket table and correlates listening tunnel processes, counts
 // established client connections per local port, reads each tunnel
-// process's cumulative I/O byte counters, and updates LastActive/IdleDuration
-// accordingly. Tunnels previously tracked but no longer discovered (i.e.
-// their process has terminated or their specific listening socket has closed)
-// are evicted from internal state. The returned slice reflects the current,
-// post-reconcile view of all live tunnels.
+// process's cumulative syscall byte counters, and updates
+// LastActive/IdleDuration accordingly. Tunnels previously tracked but no longer
+// discovered (i.e. their process has terminated or their specific listening socket
+// has closed) are evicted from internal state. The returned slice reflects the
+// current, post-reconcile view of all live tunnels.
 func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -148,20 +148,32 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 		cached, exists := e.tunnels[key]
 
 		activeClients := countClients(clientCounts, d)
-		readBytes, writeBytes, _ := procfs.ReadProcessIO(e.cfg.ProcRoot, d.PID)
+		// RChar/WChar, not ReadBytes/WriteBytes: a tunnel's payload is socket
+		// traffic, which the kernel accounts against the syscall counters and
+		// never against the block layer. Watching the block counters left a
+		// saturated tunnel looking perfectly still, so it aged into the idle
+		// threshold and -kill-idle reaped a session that was carrying traffic.
+		//
+		// On error reading procfs io, do NOT treat the resulting zero counters as
+		// a delta (which would spuriously reset the idle clock). Only register
+		// activity if the read succeeded.
+		io, ioErr := procfs.ReadProcessIO(e.cfg.ProcRoot, d.PID)
+		readBytes, writeBytes := io.RChar, io.WChar
 
 		if !exists {
 			d.FirstSeen = now
 			d.LastActive = now
 			d.ActiveClients = activeClients
-			d.BytesRead = readBytes
-			d.BytesWritten = writeBytes
+			if ioErr == nil {
+				d.BytesRead = readBytes
+				d.BytesWritten = writeBytes
+			}
 			d.IdleDuration = 0
 			e.tunnels[key] = &d
 			result = append(result, d)
 		} else {
 			cached.ActiveClients = activeClients
-			ioChanged := (readBytes != cached.BytesRead) || (writeBytes != cached.BytesWritten)
+			ioChanged := (ioErr == nil) && ((readBytes != cached.BytesRead) || (writeBytes != cached.BytesWritten))
 			if activeClients > 0 || ioChanged {
 				cached.LastActive = now
 				cached.BytesRead = readBytes

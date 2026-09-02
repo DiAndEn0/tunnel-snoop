@@ -116,6 +116,7 @@ func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries [
 						LastActive:   time.Now(),
 					}
 					tun.IsWildcard = tun.CheckWildcard()
+					tun.Exposure = tun.CheckExposure()
 					tunnels = append(tunnels, tun)
 				}
 			}
