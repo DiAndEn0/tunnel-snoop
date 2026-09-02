@@ -30,9 +30,8 @@ const (
 	// gate in a CI job or a pre-commit hook.
 	exitExposed = 1
 
-	// exitUsage reports an invalid command line. The flag package emits it on
-	// our behalf; it is named here so that the whole set is documented in one
-	// place and no future code reuses the value for something else.
+	// exitUsage reports an invalid command line or operational failure during
+	// execution (e.g. procfs/net socket tables unreadable).
 	exitUsage = 2
 )
 
@@ -74,16 +73,18 @@ func run() int {
 	// (or reaped) was no less exposed while it was open, so the observation is
 	// remembered rather than re-derived from the final pass.
 	exposureSeen := false
+	scanFailed := false
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	tick := func() {
+	tick := func() bool {
 		now := time.Now()
 		tunnels, err := eng.Reconcile(now)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error scanning tunnels: %v\n", err)
-			return
+			scanFailed = true
+			return false
 		}
 
 		// Filter before anything downstream looks at the set, so the reaper
@@ -121,11 +122,15 @@ func run() int {
 			fmt.Printf("tunnelsnoop - Active Port-Forward Monitor [%s]\n\n", now.Format("15:04:05"))
 			fmt.Print(ui.RenderTable(tunnels))
 		}
+		return true
 	}
 
 	// Initial execution
-	tick()
+	ok := tick()
 	if *once {
+		if !ok {
+			return exitUsage
+		}
 		return exitStatus(*failOnExposed, exposureSeen)
 	}
 
@@ -136,6 +141,9 @@ func run() int {
 		select {
 		case <-ctx.Done():
 			fmt.Println("\nShutting down tunnelsnoop...")
+			if scanFailed && !exposureSeen {
+				return exitUsage
+			}
 			return exitStatus(*failOnExposed, exposureSeen)
 		case <-ticker.C:
 			tick()

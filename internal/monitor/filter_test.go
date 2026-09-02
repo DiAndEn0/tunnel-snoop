@@ -11,30 +11,34 @@ import (
 // kubectl tunnels differing in port, exposure and idle time, plus one ssh
 // tunnel, which is enough for every predicate to be able to discriminate.
 func sample() []model.Tunnel {
-	return []model.Tunnel{
-		{
-			PID:          101,
-			ProcessName:  "kubectl",
-			LocalAddress: "127.0.0.1",
-			LocalPort:    5432,
-			IdleDuration: 30 * time.Second,
-		},
-		{
-			PID:          102,
-			ProcessName:  "kubectl",
-			LocalAddress: "0.0.0.0",
-			LocalPort:    6379,
-			IsWildcard:   true,
-			IdleDuration: 20 * time.Minute,
-		},
-		{
-			PID:          103,
-			ProcessName:  "ssh",
-			LocalAddress: "127.0.0.1",
-			LocalPort:    6379,
-			IdleDuration: 0,
-		},
+	t1 := model.Tunnel{
+		PID:          101,
+		ProcessName:  "kubectl",
+		LocalAddress: "127.0.0.1",
+		LocalPort:    5432,
+		IdleDuration: 30 * time.Second,
 	}
+	t1.IsWildcard = t1.CheckWildcard()
+
+	t2 := model.Tunnel{
+		PID:          102,
+		ProcessName:  "kubectl",
+		LocalAddress: "0.0.0.0",
+		LocalPort:    6379,
+		IdleDuration: 20 * time.Minute,
+	}
+	t2.IsWildcard = t2.CheckWildcard()
+
+	t3 := model.Tunnel{
+		PID:          103,
+		ProcessName:  "ssh",
+		LocalAddress: "127.0.0.1",
+		LocalPort:    6379,
+		IdleDuration: 0,
+	}
+	t3.IsWildcard = t3.CheckWildcard()
+
+	return []model.Tunnel{t1, t2, t3}
 }
 
 func pids(tunnels []model.Tunnel) []int {
@@ -132,10 +136,15 @@ func TestFilterApplyDoesNotMutateInput(t *testing.T) {
 }
 
 func TestIsExposedFollowsWildcardBinding(t *testing.T) {
-	if IsExposed(model.Tunnel{LocalAddress: "127.0.0.1"}) {
+	tLoopback := model.Tunnel{LocalAddress: "127.0.0.1"}
+	tLoopback.IsWildcard = tLoopback.CheckWildcard()
+	if IsExposed(tLoopback) {
 		t.Fatalf("loopback binding must not be reported as exposed")
 	}
-	if !IsExposed(model.Tunnel{LocalAddress: "0.0.0.0", IsWildcard: true}) {
+
+	tWildcard := model.Tunnel{LocalAddress: "0.0.0.0"}
+	tWildcard.IsWildcard = tWildcard.CheckWildcard()
+	if !IsExposed(tWildcard) {
 		t.Fatalf("wildcard binding must be reported as exposed")
 	}
 }
