@@ -1,7 +1,6 @@
 package procfs
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,12 +17,12 @@ import (
 //
 // Only processes owned by uid are considered. Pass a negative uid to scan every
 // process regardless of owner. Ownership is taken from the owner of the
-// /proc/<pid> directory, which the kernel sets to the process's real UID.
+// /proc/<pid> directory.
 //
 // The filter matters when running with elevated privileges. Unprivileged, the
 // fd traversal below already fails with EACCES on other users' processes, so
 // the result is the same either way; as root it is the only thing preventing
-// discovery — and therefore reaping — of other users' tunnels.
+// user A from seeing or terminating user B's tunnels.
 func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries []string, uid int) ([]model.Tunnel, error) {
 	listenMap := make(map[uint64]model.SocketEntry)
 	for _, s := range sockets {
@@ -37,17 +36,19 @@ func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries [
 		return nil, err
 	}
 
-	binarySet := make(map[string]bool)
+	allowed := make(map[string]bool, len(allowedBinaries))
 	for _, b := range allowedBinaries {
-		binarySet[strings.ToLower(b)] = true
+		allowed[strings.ToLower(b)] = true
 	}
 
+	now := time.Now()
 	var tunnels []model.Tunnel
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
+
 		pid, err := strconv.Atoi(entry.Name())
 		if err != nil {
 			continue
@@ -59,61 +60,60 @@ func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries [
 			continue
 		}
 
-		// Read comm
 		commBytes, err := os.ReadFile(filepath.Join(pidDir, "comm"))
 		if err != nil {
 			continue
 		}
 		comm := strings.TrimSpace(string(commBytes))
-
-		if !binarySet[strings.ToLower(comm)] {
+		if !allowed[strings.ToLower(comm)] {
 			continue
 		}
 
-		// Read cmdline
 		cmdlineBytes, _ := os.ReadFile(filepath.Join(pidDir, "cmdline"))
-		cmdline := string(bytes.ReplaceAll(cmdlineBytes, []byte{0}, []byte(" ")))
+		cmdline := strings.ReplaceAll(string(cmdlineBytes), "\x00", " ")
+		cmdline = strings.TrimSpace(cmdline)
 
-		// Check open file descriptors for socket inodes
 		fdDir := filepath.Join(pidDir, "fd")
-		fds, err := os.ReadDir(fdDir)
+		fdEntries, err := os.ReadDir(fdDir)
 		if err != nil {
 			continue
 		}
 
 		seenInodes := make(map[uint64]bool)
-		for _, fd := range fds {
-			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
+
+		for _, fdEntry := range fdEntries {
+			link, err := os.Readlink(filepath.Join(fdDir, fdEntry.Name()))
 			if err != nil {
 				continue
 			}
 
 			if strings.HasPrefix(link, "socket:[") && strings.HasSuffix(link, "]") {
-				inodeStr := link[len("socket:[") : len(link)-1]
+				inodeStr := link[8 : len(link)-1]
 				inode, err := strconv.ParseUint(inodeStr, 10, 64)
 				if err != nil {
 					continue
 				}
 
+				// A single socket fd can be dup'd across multiple fd slots
+				// (e.g. stdout/stderr redirection, dup2). seenInodes prevents
+				// producing duplicate Tunnel entries for the same listening
+				// socket within the same process.
 				if seenInodes[inode] {
-					// Multiple fds (e.g. dup'd listeners) pointing at the
-					// same socket inode must not produce duplicate Tunnel
-					// entries for this PID.
 					continue
 				}
+				seenInodes[inode] = true
 
-				if sock, found := listenMap[inode]; found {
-					seenInodes[inode] = true
+				if sock, ok := listenMap[inode]; ok {
 					tun := model.Tunnel{
 						PID:          pid,
 						ProcessName:  comm,
-						CommandLine:  strings.TrimSpace(cmdline),
+						CommandLine:  cmdline,
 						LocalAddress: sock.LocalIP,
 						LocalPort:    sock.LocalPort,
 						Protocol:     sock.Protocol,
 						SocketInode:  inode,
-						FirstSeen:    time.Now(),
-						LastActive:   time.Now(),
+						FirstSeen:    now,
+						LastActive:   now,
 					}
 					tun.IsWildcard = tun.CheckWildcard()
 					tun.Exposure = tun.CheckExposure()
@@ -126,19 +126,16 @@ func FindTunnels(procRoot string, sockets []model.SocketEntry, allowedBinaries [
 	return tunnels, nil
 }
 
-// ownedBy reports whether the /proc/<pid> directory at pidDir belongs to uid.
-// It reports false when ownership cannot be determined, so an unstattable entry
-// is skipped rather than assumed to be the caller's.
+// ownedBy reports whether pidDir belongs to uid. It reports false when
+// ownership cannot be determined so an unstattable entry is skipped.
 func ownedBy(pidDir string, uid int) bool {
 	info, err := os.Stat(pidDir)
 	if err != nil {
 		return false
 	}
-
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return false
 	}
-
 	return int(stat.Uid) == uid
 }
