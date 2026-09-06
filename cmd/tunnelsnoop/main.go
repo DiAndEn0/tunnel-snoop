@@ -14,35 +14,19 @@ import (
 	"github.com/DiAndEn0/tunnel-snoop/internal/ui"
 )
 
-// version is the release this binary was built from. Release builds override it
-// with -ldflags "-X main.version=<tag>"; unstamped builds report "dev".
 var version = "dev"
 
-// Exit codes. These are part of the command's contract with scripts and CI
-// steps, so they are named here and documented in the man page's EXIT STATUS
-// section rather than written as bare integers at the return sites.
+// Exit codes.
 const (
-	// exitOK reports a completed run in which no exposure had to be flagged.
-	exitOK = 0
-
-	// exitExposed reports that -fail-on-exposed was set and at least one
-	// exposed tunnel was seen, which is what makes the command usable as a
-	// gate in a CI job or a pre-commit hook.
+	exitOK      = 0
 	exitExposed = 1
-
-	// exitUsage reports an invalid command line or operational failure during
-	// execution (e.g. procfs/net socket tables unreadable).
-	exitUsage = 2
+	exitUsage   = 2
 )
 
 func main() {
 	os.Exit(run())
 }
 
-// run carries the entire command so that main is nothing but a single
-// os.Exit. os.Exit does not run deferred functions, so returning the status up
-// to main is what keeps the signal-context cancel and the ticker stop below
-// from being skipped on the exit paths.
 func run() int {
 	interval := flag.Duration("interval", 5*time.Second, "Polling interval")
 	killIdle := flag.Duration("kill-idle", 0, "Terminate tunnels idle longer than duration (e.g. 15m)")
@@ -77,11 +61,6 @@ func run() int {
 
 	filter := monitor.NewFilter(*port, *processes, *exposedOnly, *minIdle)
 
-	// Whether an exposure was seen at any point. In continuous mode the
-	// exposure that should fail the run may appear in a pass long before the
-	// operator interrupts the monitor, and a tunnel that has since been closed
-	// (or reaped) was no less exposed while it was open, so the observation is
-	// remembered rather than re-derived from the final pass.
 	exposureSeen := false
 	scanFailed := false
 
@@ -97,10 +76,6 @@ func run() int {
 			return false
 		}
 
-		// Filter before anything downstream looks at the set, so the reaper
-		// acts on exactly what the operator asked to see. "-process kubectl
-		// -kill-idle 15m" is the useful reading of that pair, and reaping
-		// tunnels excluded from the display would be a destructive surprise.
 		tunnels = filter.Apply(tunnels)
 
 		if monitor.AnyExposed(tunnels) {
@@ -112,9 +87,6 @@ func run() int {
 				if tun.IdleDuration > *killIdle {
 					fmt.Fprintf(os.Stderr, "Killing idle tunnel PID %d (%s:%d)...\n",
 						tun.PID, tun.LocalAddress, tun.LocalPort)
-					// Report refusals: the reaper aborts rather than signalling
-					// when a PID has been recycled or its socket has closed, and
-					// silence there is indistinguishable from a successful kill.
 					if err := reaper.TerminateTunnel("/proc", tun, 5*time.Second); err != nil {
 						fmt.Fprintf(os.Stderr, "Failed to terminate PID %d: %v\n", tun.PID, err)
 					}
@@ -132,7 +104,7 @@ func run() int {
 			fmt.Println(string(data))
 		} else {
 			if !*once {
-				fmt.Print("\033[H\033[2J") // Clear screen
+				fmt.Print("\033[H\033[2J")
 			}
 			fmt.Printf("tunnelsnoop - Active Port-Forward Monitor [%s]\n\n", now.Format("15:04:05"))
 			fmt.Print(ui.RenderTable(tunnels))
@@ -140,7 +112,6 @@ func run() int {
 		return true
 	}
 
-	// Initial execution
 	ok := tick()
 	if *once {
 		if !ok {
@@ -170,9 +141,6 @@ func run() int {
 	}
 }
 
-// exitStatus maps an observed exposure onto the process exit code. Without
-// -fail-on-exposed the exposure is reported in the output only, keeping the
-// exit code of an ordinary run identical to what it has always been.
 func exitStatus(failOnExposed, exposureSeen bool) int {
 	if failOnExposed && exposureSeen {
 		return exitExposed
