@@ -61,6 +61,16 @@ func run() int {
 		return exitOK
 	}
 
+	if *port < 0 || *port > 65535 {
+		fmt.Fprintf(os.Stderr, "Invalid port: %d (must be between 0 and 65535)\n", *port)
+		return exitUsage
+	}
+
+	if !*once && *interval <= 0 {
+		fmt.Fprintf(os.Stderr, "Invalid interval: %v (must be positive duration)\n", *interval)
+		return exitUsage
+	}
+
 	eng := monitor.NewEngine(monitor.Config{
 		KillIdle: *killIdle,
 	})
@@ -113,7 +123,12 @@ func run() int {
 		}
 
 		if *jsonOutput {
-			data, _ := ui.FormatJSON(tunnels)
+			data, err := ui.FormatJSON(tunnels)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error formatting JSON: %v\n", err)
+				scanFailed = true
+				return false
+			}
 			fmt.Println(string(data))
 		} else {
 			if !*once {
@@ -140,8 +155,12 @@ func run() int {
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("\nShutting down tunnelsnoop...")
-			if scanFailed && !exposureSeen {
+			if *jsonOutput {
+				fmt.Fprintln(os.Stderr, "\nShutting down tunnelsnoop...")
+			} else {
+				fmt.Println("\nShutting down tunnelsnoop...")
+			}
+			if scanFailed {
 				return exitUsage
 			}
 			return exitStatus(*failOnExposed, exposureSeen)
