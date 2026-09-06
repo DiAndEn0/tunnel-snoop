@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.1](https://github.com/DiAndEn0/tunnel-snoop/compare/v1.3.0...v1.3.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **cli:** validate flags and handle scan errors reliably ([0c9e0f0](https://github.com/DiAndEn0/tunnel-snoop/commit/0c9e0f013ac7cd3dab10f3cc5c43e842eb8bfeca))
+* **cli:** validate flags and handle scan errors reliably ([eef80b8](https://github.com/DiAndEn0/tunnel-snoop/commit/eef80b8c38de08b9851dbd4d8ae777a927da0552))
+* **monitor,ui:** preserve I/O counters on read error and bracket IPv6 endpoints ([fd5f7d2](https://github.com/DiAndEn0/tunnel-snoop/commit/fd5f7d27f1c17dc1913d02ca22b821637b879b1e))
+* **monitor,ui:** preserve I/O counters on read error and bracket IPv6 endpoints ([f846a81](https://github.com/DiAndEn0/tunnel-snoop/commit/f846a8191eb6a5654d96912e993529813c8f72e8))
+
 ## [1.3.0](https://github.com/DiAndEn0/tunnel-snoop/compare/v1.2.0...v1.3.0) (2026-09-02)
 
 
