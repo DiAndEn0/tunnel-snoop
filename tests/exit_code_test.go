@@ -161,3 +161,26 @@ func TestFailOnExposedAppliesToInterruptedMonitorLoop(t *testing.T) {
 		t.Fatalf("expected exit code 1 after interrupting a monitor that saw an exposure, got %d", code)
 	}
 }
+
+func TestInvalidCommandLineFlagsExitUsage(t *testing.T) {
+	binary := buildTunnelsnoop(t)
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"negative port", []string{"-once", "-port", "-1"}},
+		{"port above 65535", []string{"-once", "-port", "70000"}},
+		{"non-positive interval", []string{"-interval", "0s"}},
+		{"negative interval", []string{"-interval", "-1s"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			code, out := runExit(t, binary, tc.args...)
+			if code != 2 {
+				t.Fatalf("expected exit code 2 for %s, got %d, out: %s", tc.name, code, out)
+			}
+		})
+	}
+}
