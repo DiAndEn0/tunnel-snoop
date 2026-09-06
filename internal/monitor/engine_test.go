@@ -466,3 +466,43 @@ func TestEngineReconciliation_ProcfsIOErrorDoesNotResetIdleClock(t *testing.T) {
 		t.Fatalf("expected 20s idle duration despite missing io, got %v", third[0].IdleDuration)
 	}
 }
+
+func TestEngineReconciliation_IOErrorPreservesCachedBytes(t *testing.T) {
+	procRoot, netRoot := buildFixture(t, 4096, 8192)
+
+	eng := monitor.NewEngine(monitor.Config{
+		ProcRoot:        procRoot,
+		NetRoot:         netRoot,
+		AllowedBinaries: []string{"kubectl"},
+	})
+
+	t0 := time.Now()
+	first, err := eng.Reconcile(t0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("expected 1 tunnel, got %d", len(first))
+	}
+	if first[0].BytesRead != 4096 || first[0].BytesWritten != 8192 {
+		t.Fatalf("unexpected initial bytes: read=%d write=%d", first[0].BytesRead, first[0].BytesWritten)
+	}
+
+	// Remove io file to simulate read failure while tunnel is still alive
+	if err := os.Remove(filepath.Join(procRoot, "101", "io")); err != nil {
+		t.Fatalf("failed to remove io file: %v", err)
+	}
+
+	t1 := t0.Add(5 * time.Second)
+	second, err := eng.Reconcile(t1)
+	if err != nil {
+		t.Fatalf("unexpected error on second reconcile: %v", err)
+	}
+	if len(second) != 1 {
+		t.Fatalf("expected 1 tunnel on second reconcile, got %d", len(second))
+	}
+	if second[0].BytesRead != 4096 || second[0].BytesWritten != 8192 {
+		t.Fatalf("expected cached bytes to be preserved on io read failure, got read=%d write=%d",
+			second[0].BytesRead, second[0].BytesWritten)
+	}
+}
