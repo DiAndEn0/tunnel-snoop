@@ -157,8 +157,8 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 		// On error reading procfs io, do NOT treat the resulting zero counters as
 		// a delta (which would spuriously reset the idle clock). Only register
 		// activity if the read succeeded.
-		io, ioErr := procfs.ReadProcessIO(e.cfg.ProcRoot, d.PID)
-		readBytes, writeBytes := io.RChar, io.WChar
+		procIO, ioErr := procfs.ReadProcessIO(e.cfg.ProcRoot, d.PID)
+		readBytes, writeBytes := procIO.RChar, procIO.WChar
 
 		if !exists {
 			d.FirstSeen = now
@@ -176,8 +176,10 @@ func (e *Engine) Reconcile(now time.Time) ([]model.Tunnel, error) {
 			ioChanged := (ioErr == nil) && ((readBytes != cached.BytesRead) || (writeBytes != cached.BytesWritten))
 			if activeClients > 0 || ioChanged {
 				cached.LastActive = now
-				cached.BytesRead = readBytes
-				cached.BytesWritten = writeBytes
+				if ioErr == nil {
+					cached.BytesRead = readBytes
+					cached.BytesWritten = writeBytes
+				}
 			}
 			cached.IdleDuration = cached.CalculateIdle(now)
 			result = append(result, *cached)

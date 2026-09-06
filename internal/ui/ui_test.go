@@ -115,3 +115,29 @@ func TestRenderTableHeaderAlignment(t *testing.T) {
 		t.Fatalf("expected a SECURITY column in the header: %q", header)
 	}
 }
+
+func TestRenderTableIPv6Binding(t *testing.T) {
+	tunnels := []model.Tunnel{
+		{
+			PID:          999,
+			ProcessName:  "ssh",
+			LocalAddress: "::",
+			LocalPort:    8080,
+			Exposure:     model.ExposureWildcard,
+		},
+	}
+	table := ui.RenderTable(tunnels)
+	if !strings.Contains(table, "[::]:8080") {
+		t.Fatalf("expected bracketed IPv6 endpoint '[::]:8080', got:\n%s", table)
+	}
+}
+
+func TestFormatJSONNilSlice(t *testing.T) {
+	data, err := ui.FormatJSON(nil)
+	if err != nil {
+		t.Fatalf("unexpected error formatting nil slice: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != "[]" {
+		t.Fatalf("expected '[]', got %q", string(data))
+	}
+}

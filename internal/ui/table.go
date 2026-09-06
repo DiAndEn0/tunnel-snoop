@@ -2,7 +2,10 @@ package ui
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DiAndEn0/tunnel-snoop/internal/model"
 )
@@ -36,11 +39,11 @@ func RenderTable(tunnels []model.Tunnel) string {
 	}
 
 	for _, tun := range tunnels {
-		binding := fmt.Sprintf("%s:%d", tun.LocalAddress, tun.LocalPort)
+		binding := net.JoinHostPort(tun.LocalAddress, strconv.Itoa(tun.LocalPort))
 
-		idleStr := tun.IdleDuration.Round(1e9).String()
-		if tun.IdleDuration < 1e9 {
-			idleStr = "active"
+		idleStr := "active"
+		if tun.IdleDuration >= time.Second {
+			idleStr = tun.IdleDuration.Round(time.Second).String()
 		}
 
 		_, _ = fmt.Fprintf(&sb, "%-7d %-12s %-20s %-8d %-10s %s\n",
@@ -73,6 +76,8 @@ func securityBadge(tun model.Tunnel) string {
 		return fmt.Sprintf("%s[EXPOSED LAN]%s", colorYellow, colorReset)
 	case model.ExposureWildcard:
 		return fmt.Sprintf("%s[EXPOSED 0.0.0.0]%s", colorRed, colorReset)
+	case model.ExposurePublic:
+		return fmt.Sprintf("%s[EXPOSED PUBLIC]%s", colorRed, colorReset)
 	default:
 		return fmt.Sprintf("%s[EXPOSED PUBLIC]%s", colorRed, colorReset)
 	}
